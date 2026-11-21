@@ -101,6 +101,33 @@ class Camera2Controller(
     private val _isProcessingCapture = MutableStateFlow(false)
     val isProcessingCapture: StateFlow<Boolean> = _isProcessingCapture.asStateFlow()
 
+    private val _cameraErrorMessage = MutableStateFlow<String?>(null)
+    val cameraErrorMessage: StateFlow<String?> = _cameraErrorMessage.asStateFlow()
+
+    private var isAppActive: Boolean = true
+    private var isAvailabilityRegistered: Boolean = false
+
+    private val availabilityCallback = object : CameraManager.AvailabilityCallback() {
+        override fun onCameraAvailable(cameraId: String) {
+            super.onCameraAvailable(cameraId)
+            if (cameraId == logicalCameraId) {
+                Log.d(TAG, "Camera $cameraId is now AVAILABLE from system")
+                if (isAppActive && cameraDevice == null && previewSurface != null) {
+                    backgroundHandler?.post {
+                        openCamera(previewSurface!!)
+                    }
+                }
+            }
+        }
+
+        override fun onCameraUnavailable(cameraId: String) {
+            super.onCameraUnavailable(cameraId)
+            if (cameraId == logicalCameraId) {
+                Log.d(TAG, "Camera $cameraId is UNAVAILABLE (in use by another app or system)")
+            }
+        }
+    }
+
     // Live frame preview callback for histogram / peaking analysis
     var onAnalysisFrameAvailable: ((Bitmap) -> Unit)? = null
 
@@ -156,8 +183,23 @@ class Camera2Controller(
     @SuppressLint("MissingPermission")
     fun openCamera(surface: Surface) {
         startBackgroundThread()
-        discoverCameras()
         previewSurface = surface
+        isAppActive = true
+
+        if (cameraDevice != null) {
+            closeCameraSessionAndDevice()
+        }
+
+        discoverCameras()
+
+        if (!isAvailabilityRegistered) {
+            try {
+                cameraManager.registerAvailabilityCallback(availabilityCallback, backgroundHandler)
+                isAvailabilityRegistered = true
+            } catch (e: Exception) {
+                Log.e(TAG, "Error registering availability callback", e)
+            }
+        }
 
         try {
             // Setup ImageReaders: High-Res JPEG, RAW Sensor, and Analysis buffer
@@ -189,6 +231,7 @@ class Camera2Controller(
             cameraManager.openCamera(logicalCameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
                     cameraDevice = camera
+                    _cameraErrorMessage.value = null
                     createCaptureSession()
                 }
 
@@ -201,10 +244,29 @@ class Camera2Controller(
                     Log.e(TAG, "Camera open error: $error")
                     camera.close()
                     cameraDevice = null
+                    val msg = when (error) {
+                        CameraDevice.StateCallback.ERROR_CAMERA_IN_USE -> "कैमरा स्टॉक ऐप में उपयोग में है। पुनः कनेक्ट हो रहा है..."
+                        CameraDevice.StateCallback.ERROR_MAX_CAMERAS_IN_USE -> "कैमरा व्यस्त है..."
+                        CameraDevice.StateCallback.ERROR_CAMERA_DISABLED -> "कैमरा अक्षम है।"
+                        CameraDevice.StateCallback.ERROR_CAMERA_DEVICE -> "कैमरा हार्डवेयर रीसेट हो रहा है..."
+                        CameraDevice.StateCallback.ERROR_CAMERA_SERVICE -> "कैमरा सर्विस पुनः शुरू हो रही है..."
+                        else -> "कैमरा त्रुटि ($error)"
+                    }
+                    _cameraErrorMessage.value = msg
+
+                    if (error == CameraDevice.StateCallback.ERROR_CAMERA_IN_USE ||
+                        error == CameraDevice.StateCallback.ERROR_MAX_CAMERAS_IN_USE) {
+                        backgroundHandler?.postDelayed({
+                            if (isAppActive && cameraDevice == null && previewSurface != null) {
+                                openCamera(previewSurface!!)
+                            }
+                        }, 700)
+                    }
                 }
             }, backgroundHandler)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to open camera", e)
+            _cameraErrorMessage.value = "कैमरा ओपन नहीं हो सका: ${e.message}"
         }
     }
 
@@ -612,14 +674,59 @@ class Camera2Controller(
         return bitmap
     }
 
-    fun close() {
-        captureSession?.close()
+    fun pauseCamera() {
+        Log.d(TAG, "pauseCamera: Immediately releasing camera hardware for preinstalled camera")
+        isAppActive = false
+        closeCameraSessionAndDevice()
+    }
+
+    fun resumeCamera() {
+        Log.d(TAG, "resumeCamera: Re-acquiring camera")
+        isAppActive = true
+        previewSurface?.let { openCamera(it) }
+    }
+
+    fun resetCameraHardware() {
+        Log.d(TAG, "resetCameraHardware: Force-resetting camera HAL and reconnecting")
+        closeCameraSessionAndDevice()
+        backgroundHandler?.postDelayed({
+            previewSurface?.let { openCamera(it) }
+        }, 350)
+    }
+
+    fun closeCameraSessionAndDevice() {
+        try {
+            captureSession?.stopRepeating()
+            captureSession?.abortCaptures()
+        } catch (_: Exception) {}
+        try {
+            captureSession?.close()
+        } catch (_: Exception) {}
         captureSession = null
-        cameraDevice?.close()
+
+        try {
+            cameraDevice?.close()
+        } catch (_: Exception) {}
         cameraDevice = null
-        jpegImageReader?.close()
-        rawImageReader?.close()
-        analysisImageReader?.close()
+
+        try {
+            jpegImageReader?.close()
+            rawImageReader?.close()
+            analysisImageReader?.close()
+        } catch (_: Exception) {}
+        jpegImageReader = null
+        rawImageReader = null
+        analysisImageReader = null
+    }
+
+    fun close() {
+        if (isAvailabilityRegistered) {
+            try {
+                cameraManager.unregisterAvailabilityCallback(availabilityCallback)
+                isAvailabilityRegistered = false
+            } catch (_: Exception) {}
+        }
+        closeCameraSessionAndDevice()
         stopBackgroundThread()
     }
 }

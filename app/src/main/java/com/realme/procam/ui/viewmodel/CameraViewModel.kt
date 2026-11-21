@@ -83,12 +83,30 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    val cameraErrorMessage: StateFlow<String?> = cameraController.cameraErrorMessage
+
     fun onSurfaceReady(surface: Surface) {
         cameraController.openCamera(surface)
         // Default to Dual Focus mode setup
         if (_activeMode.value == CameraMode.DUAL_FOCUS) {
             focusStacker.startDualLensSequence()
         }
+    }
+
+    fun pauseCamera() {
+        cameraController.pauseCamera()
+    }
+
+    fun resumeCamera() {
+        cameraController.resumeCamera()
+    }
+
+    fun resetCameraHardware() {
+        cameraController.resetCameraHardware()
+    }
+
+    fun closeCamera() {
+        cameraController.close()
     }
 
     fun switchMode(mode: CameraMode) {

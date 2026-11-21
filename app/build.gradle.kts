@@ -18,8 +18,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            // Target Snapdragon 7s Gen 3 (Kryo architecture, 64-bit ARM)
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            // Target Snapdragon 7s Gen 3 (64-bit ARMv9 architecture)
+            abiFilters += listOf("arm64-v8a")
         }
 
         externalNativeBuild {
@@ -90,7 +90,6 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation(libs.androidx.material.icons.extended)
 
     // AndroidX Exifinterface for DNG/JPEG metadata & watermarking
     implementation(libs.androidx.exifinterface)

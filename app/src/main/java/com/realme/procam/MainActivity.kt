@@ -72,6 +72,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (hasCameraPermission) {
+            viewModel.resumeCamera()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        viewModel.pauseCamera()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        viewModel.pauseCamera()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        viewModel.closeCamera()
+    }
+
     private fun checkPermissions() {
         val cameraGranted = ContextCompat.checkSelfPermission(
             this,

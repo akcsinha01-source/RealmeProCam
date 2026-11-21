@@ -18,13 +18,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -84,6 +87,7 @@ fun CameraScreen(
     val isGuideOpen by viewModel.isGuideOpen.collectAsState()
     val darkroomBitmap by viewModel.darkroomBitmap.collectAsState()
     val notification by viewModel.capturedNotification.collectAsState()
+    val cameraError by viewModel.cameraErrorMessage.collectAsState()
 
     // Focus Target Ring Animation on Tap
     var tapRingPosition by remember { mutableStateOf<Offset?>(null) }
@@ -278,7 +282,28 @@ fun CameraScreen(
                     }
                 )
 
-                // Guide (?) Button - Launches In-App Interactive Hindi/English Guide
+                // Camera Reset / Reconnect Button (fixes HAL lockup if preinstalled camera was active)
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(OledCard)
+                        .border(1.dp, OledBorder, CircleShape)
+                        .clickable {
+                            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                            viewModel.resetCameraHardware()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "रीसेट कैमरा (Reset Camera Hardware)",
+                        tint = RealmeGold,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // Guide (i) Button - Launches In-App Interactive Hindi/English Guide
                 Box(
                     modifier = Modifier
                         .size(36.dp)
@@ -292,7 +317,7 @@ fun CameraScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Default.HelpOutline,
+                        Icons.Default.Info,
                         contentDescription = "Feature Guide & Interactive Demos",
                         tint = RealmeGold,
                         modifier = Modifier.size(20.dp)
@@ -312,6 +337,27 @@ fun CameraScreen(
                     .align(Alignment.TopCenter)
                     .padding(top = 110.dp)
             )
+        }
+
+        // Camera Error / Busy Warning Banner
+        cameraError?.let { err ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Black.copy(alpha = 0.90f))
+                    .border(1.dp, RealmeGold, RoundedCornerShape(12.dp))
+                    .clickable { viewModel.resetCameraHardware() }
+                    .padding(horizontal = 20.dp, vertical = 14.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, tint = RealmeGold, modifier = Modifier.size(18.dp))
+                    Text(text = err, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+            }
         }
 
         // Notification Banner
@@ -538,7 +584,7 @@ private fun ShutterBar(
                 .border(1.dp, OledBorder, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.PhotoLibrary, contentDescription = "Gallery", tint = TextSecondary, modifier = Modifier.size(24.dp))
+            GalleryIcon(tint = TextSecondary, modifier = Modifier.size(24.dp))
         }
 
         // Master Shutter Button
@@ -567,12 +613,7 @@ private fun ShutterBar(
                     contentAlignment = Alignment.Center
                 ) {
                     if (activeMode == CameraMode.DUAL_FOCUS) {
-                        Icon(
-                            Icons.Default.Layers,
-                            contentDescription = "Optical Focus Stack",
-                            tint = Black,
-                            modifier = Modifier.size(32.dp)
-                        )
+                        LayersIcon(tint = Black, modifier = Modifier.size(30.dp))
                     }
                 }
             }
@@ -587,7 +628,49 @@ private fun ShutterBar(
                 .border(1.dp, OledBorder, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.FlipCameraAndroid, contentDescription = "Switch Camera", tint = TextSecondary, modifier = Modifier.size(24.dp))
+            Icon(Icons.Default.Refresh, contentDescription = "Switch Camera / Reset", tint = TextSecondary, modifier = Modifier.size(22.dp))
         }
+    }
+}
+
+@Composable
+private fun LayersIcon(tint: Color = Color.Black, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        // Bottom layer (background frame)
+        drawRoundRect(
+            color = tint.copy(alpha = 0.45f),
+            topLeft = Offset(w * 0.15f, h * 0.12f),
+            size = Size(w * 0.70f, h * 0.45f),
+            cornerRadius = CornerRadius(4.dp.toPx())
+        )
+        // Top layer (foreground frame)
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.15f, h * 0.42f),
+            size = Size(w * 0.70f, h * 0.45f),
+            cornerRadius = CornerRadius(4.dp.toPx())
+        )
+    }
+}
+
+@Composable
+private fun GalleryIcon(tint: Color = TextSecondary, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.12f, h * 0.12f),
+            size = Size(w * 0.76f, h * 0.76f),
+            cornerRadius = CornerRadius(4.dp.toPx()),
+            style = Stroke(width = 1.8.dp.toPx())
+        )
+        drawCircle(
+            color = tint,
+            radius = w * 0.10f,
+            center = Offset(w * 0.35f, h * 0.35f)
+        )
     }
 }
