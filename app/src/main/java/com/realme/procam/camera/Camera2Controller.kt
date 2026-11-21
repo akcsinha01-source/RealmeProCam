@@ -268,10 +268,8 @@ class Camera2Controller(
                 addTarget(pSurface)
                 addTarget(aSurface)
 
-                // 1. Zoom Ratio / Physical Lens binding
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    set(CaptureRequest.CONTROL_ZOOM_RATIO, _currentLens.value.zoomRatio)
-                }
+                // 1. Zoom Ratio & Scaler Crop Region (Physical Lens Binding)
+                applyZoom(this, _currentLens.value.zoomRatio)
 
                 // 2. Exposure Mode (Auto vs Manual ISO & Shutter)
                 if (_isManualExposure.value) {
@@ -306,6 +304,21 @@ class Camera2Controller(
         } catch (e: Exception) {
             Log.e(TAG, "Error updating preview repeating", e)
         }
+    }
+
+    private fun applyZoom(builder: CaptureRequest.Builder, zoomRatio: Float) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            builder.set(CaptureRequest.CONTROL_ZOOM_RATIO, zoomRatio)
+        }
+        try {
+            val chars = cameraManager.getCameraCharacteristics(logicalCameraId)
+            val activeArray = chars.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE) ?: Rect(0, 0, 4000, 3000)
+            val cropW = (activeArray.width() / zoomRatio).toInt()
+            val cropH = (activeArray.height() / zoomRatio).toInt()
+            val cropX = (activeArray.width() - cropW) / 2
+            val cropY = (activeArray.height() - cropH) / 2
+            builder.set(CaptureRequest.SCALER_CROP_REGION, Rect(cropX, cropY, cropX + cropW, cropY + cropH))
+        } catch (_: Exception) {}
     }
 
     private fun applyWhiteBalance(builder: CaptureRequest.Builder, kelvin: Int) {
@@ -499,9 +512,7 @@ class Camera2Controller(
         try {
             val captureBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
                 addTarget(jReader.surface)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    set(CaptureRequest.CONTROL_ZOOM_RATIO, _currentLens.value.zoomRatio)
-                }
+                applyZoom(this, _currentLens.value.zoomRatio)
                 set(CaptureRequest.JPEG_QUALITY, 100.toByte())
                 set(CaptureRequest.JPEG_ORIENTATION, 90) // Portrait standard
             }
