@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -114,24 +115,22 @@ fun CameraScreen(
                         override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean = true
                         override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
                     }
-                    setOnTouchListener { v, event ->
-                        if (event.action == MotionEvent.ACTION_UP) {
-                            val normX = (event.x / v.width.toFloat()).coerceIn(0f, 1f)
-                            val normY = (event.y / v.height.toFloat()).coerceIn(0f, 1f)
-                            viewModel.cameraController.tapToFocus(normX, normY)
-                            tapRingPosition = Offset(event.x, event.y)
-                            v.performClick()
-                        }
-                        true
-                    }
                 }
             }
         )
 
-        // Viewfinder Touch Layer for Tap-To-Focus
+        // Viewfinder Touch Layer for Tap-To-Focus & Pinch-to-Zoom
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, _, zoomChange, _ ->
+                        if (zoomChange != 1.0f) {
+                            val targetZoom = (zoomRatio * zoomChange).coerceIn(0.6f, 200.0f)
+                            viewModel.setZoomRatio(targetZoom)
+                        }
+                    }
+                }
                 .pointerInput(Unit) {
                     detectTapGestures { offset ->
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)

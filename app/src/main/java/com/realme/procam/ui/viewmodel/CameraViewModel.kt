@@ -38,7 +38,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     val sensorHelper = SensorOrientationHelper(application)
 
     // UI State Flows
-    private val _activeMode = MutableStateFlow(CameraMode.DUAL_FOCUS)
+    private val _activeMode = MutableStateFlow(CameraMode.PHOTO)
     val activeMode: StateFlow<CameraMode> = _activeMode.asStateFlow()
 
     private val _gridType = MutableStateFlow(GridType.RULE_OF_THIRDS)

@@ -47,7 +47,7 @@ object RealmeCameraConstants {
         DUAL_FOCUS("DUAL-LENS STACK", "हाइब्रिड फोकस स्टैक", "1x Foreground + 3x Periscope Background Fusion"),
         ASTRO("ASTRO SKY", "एस्ट्रो नाइट", "Multi-frame Star Alignment & Denoise"),
         LONG_EXPOSURE("LIGHT TRAILS", "लॉन्ग एक्सपोज़र", "Tripod-free Vehicle Lights & Water Smoothing"),
-        HDR_PLUS("HDR+ RAW", "एचडीआर+ रॉ", "Multi-bracketed Exposure Fusion with DNG"),
+        HDR_PLUS("GCAM HDR+", "जी-कैम HDR+", "Google Camera Multi-bracketed Exposure Fusion with DNG"),
         SUPER_MACRO("SUPER MACRO", "सुपर मैक्रो", "Periscope Telephoto Close-up with Focus Peaking"),
         SCANNER("DOC SCANNER", "डॉक्यूमेंट स्कैनर", "Perspective Rectification & Text Contrast Boost")
     }
