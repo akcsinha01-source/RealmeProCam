@@ -3,9 +3,11 @@
     native <methods>;
 }
 
--keep class com.realme.procam.processing.HybridFocusStacker { *; }
--keep class com.realme.procam.processing.ComputationalPhotographyEngine { *; }
--keep class com.realme.procam.camera.** { *; }
+-keep class com.realme.procam.** { *; }
 
 # OpenCV Android SDK
 -keep class org.opencv.** { *; }
+
+# Suppress harmless warnings during R8 tree-shaking
+-dontwarn **
+-ignorewarnings
