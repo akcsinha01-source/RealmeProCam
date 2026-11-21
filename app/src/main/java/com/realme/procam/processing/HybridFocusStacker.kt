@@ -244,15 +244,6 @@ class HybridFocusStacker(
         }
         canvas.drawBitmap(far, 0f, 0f, paint)
     }
-                (main.height * 0.25f).toInt(),
-                (main.width * 0.75f).toInt(),
-                (main.height * 0.75f).toInt()
-            )
-            canvas.drawBitmap(tele, null, destRect, paint)
-        } else {
-            canvas.drawBitmap(tele, 0f, 0f, paint)
-        }
-    }
 
     fun reset() {
         _phase.value = StackingPhase.IDLE
