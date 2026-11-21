@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.realme.procam.camera.RealmeCameraConstants.CameraMode
 import com.realme.procam.camera.RealmeCameraConstants.LensType
+import com.realme.procam.processing.HybridFocusStacker
 import com.realme.procam.theme.*
 import com.realme.procam.ui.components.*
 import com.realme.procam.ui.guide.FeatureGuideScreen
@@ -136,7 +137,10 @@ fun CameraScreen(
             val ringScale by infiniteTransition.animateFloat(
                 initialValue = 1.3f,
                 targetValue = 0.9f,
-                animationSpec = tween(400, easing = FastOutSlowInEasing),
+                animationSpec = infiniteRepeatable(
+                    animation = tween(400, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
                 label = "FocusScale"
             )
             Box(

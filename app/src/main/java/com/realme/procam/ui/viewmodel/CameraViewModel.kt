@@ -25,7 +25,7 @@ import java.io.File
 class CameraViewModel(application: Application) : AndroidViewModel(application) {
 
     val cameraController = Camera2Controller(application, viewModelScope)
-    val focusStacker = HybridFocusStacker(application, cameraController)
+    val focusStacker = HybridFocusStacker(application, cameraController, viewModelScope)
     val sensorHelper = SensorOrientationHelper(application)
 
     // UI State Flows

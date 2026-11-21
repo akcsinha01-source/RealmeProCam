@@ -14,10 +14,12 @@ import android.util.Log
 import com.realme.procam.camera.Camera2Controller
 import com.realme.procam.camera.RealmeCameraConstants
 import com.realme.procam.camera.RealmeCameraConstants.LensType
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -33,7 +35,8 @@ import java.util.Locale
  */
 class HybridFocusStacker(
     private val context: Context,
-    private val cameraController: Camera2Controller
+    private val cameraController: Camera2Controller,
+    private val coroutineScope: CoroutineScope
 ) {
     companion object {
         private const val TAG = "RealmeProCam_Stacker"
@@ -150,7 +153,7 @@ class HybridFocusStacker(
         val near = nearForegroundBitmap ?: return
         val far = farBackgroundBitmap ?: return
 
-        kotlinx.coroutines.GlobalScope.launch(Dispatchers.Default) {
+        coroutineScope.launch(Dispatchers.Default) {
             val resultBitmap = Bitmap.createBitmap(near.width, near.height, Bitmap.Config.ARGB_8888)
             var success = false
 

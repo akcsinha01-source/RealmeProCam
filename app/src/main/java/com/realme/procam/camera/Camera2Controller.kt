@@ -454,15 +454,19 @@ class Camera2Controller(
         val rReader = rawImageReader ?: return
         val chars = cameraManager.getCameraCharacteristics(logicalCameraId)
 
+        var lastCaptureResult: TotalCaptureResult? = null
+
         rReader.setOnImageAvailableListener({ reader ->
             val image = reader.acquireLatestImage()
             if (image != null) {
                 try {
-                    val dngCreator = DngCreator(chars, session.device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).build())
-                    FileOutputStream(outputDngFile).use { fos ->
-                        dngCreator.writeImage(fos, image)
+                    lastCaptureResult?.let { result ->
+                        val dngCreator = DngCreator(chars, result)
+                        FileOutputStream(outputDngFile).use { fos ->
+                            dngCreator.writeImage(fos, image)
+                        }
+                        dngCreator.close()
                     }
-                    dngCreator.close()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error writing DNG file", e)
                 } finally {
@@ -476,7 +480,11 @@ class Camera2Controller(
             val rawBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
                 addTarget(rReader.surface)
             }
-            session.capture(rawBuilder.build(), null, backgroundHandler)
+            session.capture(rawBuilder.build(), object : CameraCaptureSession.CaptureCallback() {
+                override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+                    lastCaptureResult = result
+                }
+            }, backgroundHandler)
         } catch (e: Exception) {
             Log.e(TAG, "RAW capture request failed", e)
         }

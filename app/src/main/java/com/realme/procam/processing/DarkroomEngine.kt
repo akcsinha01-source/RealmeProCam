@@ -8,7 +8,6 @@ import android.graphics.Rect
 import android.graphics.Typeface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.math.clamp
 
 /**
  * Built-in Post-Capture Darkroom Engine:
