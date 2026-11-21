@@ -68,7 +68,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             try {
                 ComputationalPhotographyEngine.nativeComputeHistogram(bmp, luma, r, g, b)
                 _liveHistogram.value = luma
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 // Ignore fallback
             }
         }

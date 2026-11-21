@@ -5,15 +5,15 @@
     <!-- Camera Hardware & Features -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="true" />
-    <uses-feature android:name="android.hardware.camera.autofocus" android:required="true" />
-    <uses-feature android:name="android.hardware.camera.manual_sensor" android:required="true" />
-    <uses-feature android:name="android.hardware.camera.manual_post_processing" android:required="true" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.manual_sensor" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.manual_post_processing" android:required="false" />
     <uses-feature android:name="android.hardware.camera.raw" android:required="false" />
     <uses-feature android:name="android.hardware.camera.concurrent" android:required="false" />
 
     <!-- Motion Sensors for Electronic Horizon Level -->
-    <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="true" />
-    <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
+    <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
 
     <!-- Storage & Media -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />

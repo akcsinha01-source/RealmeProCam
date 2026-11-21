@@ -24,7 +24,7 @@ android {
 
         externalNativeBuild {
             cmake {
-                cppFlags += "-std=c++17 -O3 -fexceptions -frtti -fopenmp"
+                cppFlags += "-std=c++17 -O3 -fexceptions -frtti"
                 arguments += listOf(
                     "-DANDROID_STL=c++_shared"
                 )

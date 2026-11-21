@@ -26,7 +26,7 @@ object ComputationalPhotographyEngine {
     init {
         try {
             System.loadLibrary("procam_native")
-        } catch (e: UnsatisfiedLinkError) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Native library not found in CompEngine", e)
         }
     }

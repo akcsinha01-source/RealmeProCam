@@ -4,7 +4,6 @@
 #include <cmath>
 #include <vector>
 #include <algorithm>
-#include <omp.h>
 
 #define TAG "RealmeProCam_ImageProc"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, TAG, __VA_ARGS__)
@@ -83,7 +82,6 @@ Java_com_realme_procam_processing_ComputationalPhotographyEngine_nativeApplyFocu
     const uint32_t* src = static_cast<const uint32_t*>(inPixels);
     uint32_t* dst = static_cast<uint32_t*>(outPixels);
 
-    #pragma omp parallel for collapse(2)
     for (int y = 1; y < height - 1; ++y) {
         for (int x = 1; x < width - 1; ++x) {
             // Compute Sobel 3x3 gradient on luminance

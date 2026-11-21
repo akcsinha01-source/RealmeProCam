@@ -6,7 +6,6 @@
 #include <array>
 #include <algorithm>
 #include <cstring>
-#include <omp.h>
 
 #define TAG "RealmeProCam_FocusStacker"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, TAG, __VA_ARGS__)
@@ -20,7 +19,6 @@ struct PixelRGB {
 
 // Convert ARGB_8888 bitmap to grayscale float plane
 void extractGrayscale(const uint32_t* src, float* dst, int width, int height) {
-    #pragma omp parallel for collapse(2)
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             uint32_t pixel = src[y * width + x];
@@ -35,7 +33,6 @@ void extractGrayscale(const uint32_t* src, float* dst, int width, int height) {
 
 // Compute Modified Laplacian Focus Measure (SML)
 void computeModifiedLaplacian(const float* gray, float* focusMap, int width, int height, int step = 1) {
-    #pragma omp parallel for collapse(2)
     for (int y = step; y < height - step; ++y) {
         for (int x = step; x < width - step; ++x) {
             float center = gray[y * width + x];
@@ -51,7 +48,6 @@ void smoothFocusMap(const float* src, float* dst, int width, int height, int rad
     std::vector<float> temp(width * height, 0.0f);
 
     // Horizontal pass
-    #pragma omp parallel for
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             float sum = 0.0f;
@@ -68,7 +64,6 @@ void smoothFocusMap(const float* src, float* dst, int width, int height, int rad
     }
 
     // Vertical pass
-    #pragma omp parallel for
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             float sum = 0.0f;
@@ -174,7 +169,6 @@ Java_com_realme_procam_processing_HybridFocusStacker_nativeAlignAndStack(
     // Buffer for telephoto warped into Main image's frame
     std::vector<uint32_t> warpedTele(width * height, 0);
 
-    #pragma omp parallel for collapse(2)
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             // Map main (x, y) to telephoto coordinates (tx, ty)
@@ -207,7 +201,6 @@ Java_com_realme_procam_processing_HybridFocusStacker_nativeAlignAndStack(
     smoothFocusMap(focusTele.data(), smoothTele.data(), width, height, 7);
 
     // Step 3: Multi-Band Blending / Soft Focus Fusion
-    #pragma omp parallel for collapse(2)
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             int idx = y * width + x;

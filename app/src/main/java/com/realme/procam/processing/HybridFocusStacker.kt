@@ -45,7 +45,7 @@ class HybridFocusStacker(
             try {
                 System.loadLibrary("procam_native")
                 Log.d(TAG, "Native procam_native library loaded successfully.")
-            } catch (e: UnsatisfiedLinkError) {
+            } catch (e: Throwable) {
                 Log.e(TAG, "Could not load procam_native library, fallback active.", e)
             }
         }

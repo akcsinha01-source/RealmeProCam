@@ -491,24 +491,30 @@ class Camera2Controller(
     }
 
     private fun yuvToBitmap(image: Image): Bitmap {
-        val yBuffer = image.planes[0].buffer
-        val uBuffer = image.planes[1].buffer
-        val vBuffer = image.planes[2].buffer
+        val width = image.width
+        val height = image.height
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        try {
+            val yPlane = image.planes[0]
+            val yBuffer = yPlane.buffer
+            val rowStride = yPlane.rowStride
+            val pixels = IntArray(width * height)
 
-        val ySize = yBuffer.remaining()
-        val uSize = uBuffer.remaining()
-        val vSize = vBuffer.remaining()
-
-        val nv21 = ByteArray(ySize + uSize + vSize)
-        yBuffer.get(nv21, 0, ySize)
-        vBuffer.get(nv21, ySize, vSize)
-        uBuffer.get(nv21, ySize + vSize, uSize)
-
-        val yuvImage = android.graphics.YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
-        val out = ByteArrayOutputStream()
-        yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), 85, out)
-        val imageBytes = out.toByteArray()
-        return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+            val row = ByteArray(rowStride)
+            for (y in 0 until height) {
+                val length = Math.min(rowStride, yBuffer.remaining())
+                if (length <= 0) break
+                yBuffer.get(row, 0, length)
+                for (x in 0 until width) {
+                    val luma = row[x].toInt() and 0xFF
+                    pixels[y * width + x] = (0xFF shl 24) or (luma shl 16) or (luma shl 8) or luma
+                }
+            }
+            bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Safe YUV extraction fallback", e)
+        }
+        return bitmap
     }
 
     fun close() {
