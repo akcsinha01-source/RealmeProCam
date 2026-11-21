@@ -461,10 +461,10 @@ class Camera2Controller(
                 } catch (_: Exception) {}
             }
         }
-        backgroundHandler.postDelayed(timeoutRunnable, 2000)
+        backgroundHandler?.postDelayed(timeoutRunnable, 2000)
 
         jReader.setOnImageAvailableListener({ reader ->
-            backgroundHandler.removeCallbacks(timeoutRunnable)
+            backgroundHandler?.removeCallbacks(timeoutRunnable)
             var image: Image? = null
             try {
                 image = reader.acquireLatestImage() ?: reader.acquireNextImage()
@@ -512,7 +512,7 @@ class Camera2Controller(
                     failure: CaptureFailure
                 ) {
                     Log.e(TAG, "Capture failed callback reason: ${failure.reason}")
-                    backgroundHandler.removeCallbacks(timeoutRunnable)
+                    backgroundHandler?.removeCallbacks(timeoutRunnable)
                     _isProcessingCapture.value = false
                     try {
                         jReader.setOnImageAvailableListener(null, null)
@@ -521,7 +521,7 @@ class Camera2Controller(
             }, backgroundHandler)
         } catch (e: Exception) {
             Log.e(TAG, "Capture failed with exception", e)
-            backgroundHandler.removeCallbacks(timeoutRunnable)
+            backgroundHandler?.removeCallbacks(timeoutRunnable)
             _isProcessingCapture.value = false
             try {
                 jReader.setOnImageAvailableListener(null, null)
