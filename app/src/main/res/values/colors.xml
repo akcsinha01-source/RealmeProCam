@@ -1,0 +1,12 @@
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="oled_surface">#FF0D0E11</color>
+    <color name="oled_surface_variant">#FF181A20</color>
+    <color name="realme_gold">#FFFFB300</color>
+    <color name="realme_yellow">#FFFFD600</color>
+    <color name="accent_cyan">#FF00E5FF</color>
+    <color name="focus_peaking_green">#FF00E676</color>
+    <color name="focus_peaking_red">#FFFF1744</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="text_secondary">#FFAAAAAA</color>
+</resources>

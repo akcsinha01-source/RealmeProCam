@@ -1,0 +1,176 @@
+package com.realme.procam.ui.components
+
+import androidx.compose.animation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.FilterCenterFocus
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.realme.procam.processing.HybridFocusStacker.StackingPhase
+import com.realme.procam.theme.*
+
+@Composable
+fun DualLensProgressIndicator(
+    phase: StackingPhase,
+    statusMessage: String,
+    modifier: Modifier = Modifier
+) {
+    if (phase == StackingPhase.IDLE) return
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .background(OledSurface.copy(alpha = 0.94f), RoundedCornerShape(16.dp))
+            .border(1.5.dp, RealmeGold.copy(alpha = 0.8f), RoundedCornerShape(16.dp))
+            .padding(14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Step Icons Row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            StepNode(
+                step = 1,
+                title = "Near (1x)",
+                icon = Icons.Default.FilterCenterFocus,
+                isCurrent = phase == StackingPhase.STEP1_NEAR_PROMPT || phase == StackingPhase.STEP1_CAPTURING,
+                isCompleted = phase > StackingPhase.STEP1_CAPTURING
+            )
+
+            StepConnector(isCompleted = phase > StackingPhase.STEP1_CAPTURING)
+
+            StepNode(
+                step = 2,
+                title = "Ghost Guide",
+                icon = Icons.Default.ZoomIn,
+                isCurrent = phase == StackingPhase.STEP2_GUIDED_TRANSITION,
+                isCompleted = phase > StackingPhase.STEP2_GUIDED_TRANSITION
+            )
+
+            StepConnector(isCompleted = phase > StackingPhase.STEP2_GUIDED_TRANSITION)
+
+            StepNode(
+                step = 3,
+                title = "Far (3x)",
+                icon = Icons.Default.ZoomIn,
+                isCurrent = phase == StackingPhase.STEP3_FAR_PROMPT || phase == StackingPhase.STEP3_CAPTURING,
+                isCompleted = phase > StackingPhase.STEP3_CAPTURING
+            )
+
+            StepConnector(isCompleted = phase > StackingPhase.STEP3_CAPTURING)
+
+            StepNode(
+                step = 4,
+                title = "AI Merge",
+                icon = Icons.Default.Layers,
+                isCurrent = phase == StackingPhase.STEP4_BLENDING,
+                isCompleted = phase == StackingPhase.COMPLETED
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // On-Screen Hinglish Guidance Prompt
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            if (phase == StackingPhase.STEP1_CAPTURING || phase == StackingPhase.STEP3_CAPTURING || phase == StackingPhase.STEP4_BLENDING) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    color = RealmeGold,
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
+            Text(
+                text = statusMessage,
+                color = if (phase == StackingPhase.STEP2_GUIDED_TRANSITION || phase == StackingPhase.STEP3_FAR_PROMPT) AccentCyan else RealmeGold,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun StepNode(
+    step: Int,
+    title: String,
+    icon: ImageVector,
+    isCurrent: Boolean,
+    isCompleted: Boolean
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(
+                    when {
+                        isCompleted -> FocusGreen.copy(alpha = 0.2f)
+                        isCurrent -> RealmeGold.copy(alpha = 0.25f)
+                        else -> OledCard
+                    }
+                )
+                .border(
+                    1.5.dp,
+                    when {
+                        isCompleted -> FocusGreen
+                        isCurrent -> RealmeGold
+                        else -> OledBorder
+                    },
+                    CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isCompleted) {
+                Icon(Icons.Default.Check, contentDescription = null, tint = FocusGreen, modifier = Modifier.size(18.dp))
+            } else {
+                Text(
+                    text = "$step",
+                    color = if (isCurrent) RealmeGold else TextMuted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = title,
+            color = if (isCurrent) RealmeGold else TextSecondary,
+            fontSize = 9.sp
+        )
+    }
+}
+
+@Composable
+private fun StepConnector(isCompleted: Boolean) {
+    Box(
+        modifier = Modifier
+            .width(20.dp)
+            .height(2.dp)
+            .background(if (isCompleted) FocusGreen else OledBorder)
+    )
+}

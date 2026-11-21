@@ -1,0 +1,35 @@
+<resources>
+    <string name="app_name">Realme ProCam 14 Pro+</string>
+    <string name="device_target">Realme 14 Pro+ 5G (Snapdragon 7s Gen 3)</string>
+
+    <!-- Camera Modes -->
+    <string name="mode_photo">PHOTO</string>
+    <string name="mode_pro">PRO MANUAL</string>
+    <string name="mode_dual_focus">DUAL-LENS FOCUS</string>
+    <string name="mode_astro">ASTRO SKY</string>
+    <string name="mode_long_exposure">LIGHT TRAILS</string>
+    <string name="mode_hdr">HDR+ RAW</string>
+    <string name="mode_super_macro">SUPER MACRO</string>
+    <string name="mode_scanner">DOC SCANNER</string>
+
+    <!-- Lens Selection -->
+    <string name="lens_ultra_wide">0.6x UW</string>
+    <string name="lens_main">1x WIDE</string>
+    <string name="lens_telephoto">3x PERISCOPE</string>
+    <string name="lens_in_sensor">6x LOSSLESS</string>
+
+    <!-- Guided Dual Focus Steps (Hinglish) -->
+    <string name="guide_dual_step1_title">कदम 1: नज़दीकी वस्तु (Near Subject)</string>
+    <string name="guide_dual_step1_desc">Main 1x लेंस सक्रिय है। सामने वाले विषय पर टैप करके फोकस लॉक करें और शटर दबाएं।</string>
+    <string name="guide_dual_step2_title">कदम 2: टेलीफोटो अलाइनमेंट (Telephoto Alignment)</string>
+    <string name="guide_dual_step2_desc">अब Periscope 3x लेंस सक्रिय है। स्क्रीन पर दिख रहे घोस्ट ओवरले (Onion Skin) से बैकग्राउंड को मिलाएँ।</string>
+    <string name="guide_dual_step3_title">कदम 3: दूर की वस्तु (Far Subject)</string>
+    <string name="guide_dual_step3_desc">Ab door wale subject par tap karke photo kheenchein (Telephoto Lens Active).</string>
+    <string name="guide_dual_step4_blending">AI Focus Stacking &amp; Alignment जारी है... कृपया स्थिर रखें।</string>
+
+    <!-- User Guide Section -->
+    <string name="guide_title">Realme 14 Pro+ प्रो कैमरा गाइड</string>
+    <string name="guide_subtitle">सीखें और तुरंत आज़माएँ (Interactive Visual Demos)</string>
+    <string name="btn_try_feature">अभी आज़माएं (Try This Feature Now)</string>
+    <string name="shutter_accessibility">Shutter Button</string>
+</resources>
