@@ -84,6 +84,11 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     val cameraErrorMessage: StateFlow<String?> = cameraController.cameraErrorMessage
+    val isFrontCamera: StateFlow<Boolean> = cameraController.isFrontCamera
+
+    fun toggleCameraFacing() {
+        cameraController.toggleCameraFacing()
+    }
 
     fun onSurfaceReady(surface: Surface) {
         cameraController.openCamera(surface)

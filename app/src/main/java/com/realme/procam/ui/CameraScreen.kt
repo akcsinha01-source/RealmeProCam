@@ -62,6 +62,7 @@ fun CameraScreen(
     val activeMode by viewModel.activeMode.collectAsState()
     val currentLens by viewModel.cameraController.currentLens.collectAsState()
     val zoomRatio by viewModel.zoomRatio.collectAsState()
+    val isFrontCamera by viewModel.isFrontCamera.collectAsState()
     val iso by viewModel.cameraController.iso.collectAsState()
     val isManualExposure by viewModel.cameraController.isManualExposure.collectAsState()
     val shutterSpeedNs by viewModel.cameraController.shutterSpeedNs.collectAsState()
@@ -233,14 +234,14 @@ fun CameraScreen(
             // Hardware Badge
             Column {
                 Text(
-                    text = "REALME 14 PRO+ 5G",
+                    text = if (isFrontCamera) "REALME 14 PRO+ (SELFIE)" else "REALME 14 PRO+ 5G",
                     color = RealmeGold,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
                 )
                 Text(
-                    text = "SD 7s Gen 3 | 50MP Periscope OIS",
+                    text = if (isFrontCamera) "32MP Front Selfie Camera" else "SD 7s Gen 3 | 50MP Periscope OIS",
                     color = TextSecondary,
                     fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace
@@ -430,9 +431,14 @@ fun CameraScreen(
                 isProcessing = isProcessingCapture,
                 activeMode = activeMode,
                 stackerPhase = stackerPhase,
+                isFrontCamera = isFrontCamera,
                 onShutterClick = {
                     view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
                     viewModel.onShutterClicked()
+                },
+                onSwitchCameraClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    viewModel.toggleCameraFacing()
                 }
             )
 
@@ -564,7 +570,9 @@ private fun ShutterBar(
     isProcessing: Boolean,
     activeMode: CameraMode,
     stackerPhase: HybridFocusStacker.StackingPhase,
-    onShutterClick: () -> Unit
+    isFrontCamera: Boolean,
+    onShutterClick: () -> Unit,
+    onSwitchCameraClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -617,16 +625,22 @@ private fun ShutterBar(
             }
         }
 
-        // Right Space / Lens Information Badge
+        // Right Space / Switch Camera Button (Front Selfie <-> Back Periscope)
         Box(
             modifier = Modifier
                 .size(48.dp)
                 .clip(CircleShape)
-                .background(OledCard)
-                .border(1.dp, OledBorder, CircleShape),
+                .background(if (isFrontCamera) RealmeGold.copy(alpha = 0.25f) else OledCard)
+                .border(1.dp, if (isFrontCamera) RealmeGold else OledBorder, CircleShape)
+                .clickable(onClick = onSwitchCameraClick),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.Refresh, contentDescription = "Switch Camera / Reset", tint = TextSecondary, modifier = Modifier.size(22.dp))
+            Icon(
+                Icons.Default.Refresh,
+                contentDescription = if (isFrontCamera) "Switch to Back Camera" else "Switch to Front Selfie Camera",
+                tint = if (isFrontCamera) RealmeGold else TextSecondary,
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }

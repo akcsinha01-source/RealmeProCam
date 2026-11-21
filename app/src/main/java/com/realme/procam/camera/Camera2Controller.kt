@@ -63,9 +63,14 @@ class Camera2Controller(
 
     // Physical Camera IDs mapping for Realme 14 Pro+
     private var logicalCameraId: String = "0"
+    private var backCameraId: String? = null
+    private var frontCameraId: String? = null
     private var physicalMainId: String? = null
     private var physicalPeriscopeId: String? = null
     private var physicalUltraWideId: String? = null
+
+    private val _isFrontCamera = MutableStateFlow(false)
+    val isFrontCamera: StateFlow<Boolean> = _isFrontCamera.asStateFlow()
 
     private var activeAfRegion: MeteringRectangle? = null
     private var activeAeRegion: MeteringRectangle? = null
@@ -162,12 +167,14 @@ class Camera2Controller(
             for (id in cameraManager.cameraIdList) {
                 val chars = cameraManager.getCameraCharacteristics(id)
                 val facing = chars.get(CameraCharacteristics.LENS_FACING)
-                if (facing == CameraCharacteristics.LENS_FACING_BACK) {
-                    logicalCameraId = id
+                if (facing == CameraCharacteristics.LENS_FACING_BACK && backCameraId == null) {
+                    backCameraId = id
+                    if (!_isFrontCamera.value) {
+                        logicalCameraId = id
+                    }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                         val physicalIds = chars.physicalCameraIds
                         Log.d(TAG, "Back Camera $id has physical camera IDs: $physicalIds")
-                        // Usually, id 0 = Main 1x, id 1/2 = Ultra-Wide, id 3/4 = Periscope 3x
                         val list = physicalIds.toList()
                         if (list.isNotEmpty()) {
                             physicalMainId = list.getOrNull(0)
@@ -175,11 +182,29 @@ class Camera2Controller(
                             physicalPeriscopeId = list.getOrNull(2) ?: list.getOrNull(1)
                         }
                     }
-                    break
+                } else if (facing == CameraCharacteristics.LENS_FACING_FRONT && frontCameraId == null) {
+                    frontCameraId = id
+                    Log.d(TAG, "Front Selfie Camera discovered: ID $id")
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error discovering camera IDs", e)
+        }
+    }
+
+    /**
+     * Switches between Back Camera (Main/Periscope) and Front Selfie Camera
+     */
+    fun toggleCameraFacing() {
+        val targetId = if (_isFrontCamera.value) backCameraId else frontCameraId
+        if (targetId != null) {
+            _isFrontCamera.value = !_isFrontCamera.value
+            logicalCameraId = targetId
+            _zoomRatio.value = 1.0f // reset zoom on front camera switch
+            closeCameraSessionAndDevice()
+            backgroundHandler?.postDelayed({
+                previewSurface?.let { openCamera(it) }
+            }, 200)
         }
     }
 
@@ -474,7 +499,8 @@ class Camera2Controller(
     }
 
     /**
-     * Tap to Focus and Metering on Viewfinder coordinates (normalized 0.0 to 1.0)
+     * Tap to Focus and Metering on Viewfinder coordinates (normalized 0.0 to 1.0).
+     * Correctly maps within active SCALER_CROP_REGION to completely eliminate exposure flickering ("chamakna") when zoomed in.
      */
     fun tapToFocus(normalizedX: Float, normalizedY: Float) {
         val device = cameraDevice ?: return
@@ -485,22 +511,33 @@ class Camera2Controller(
             val chars = cameraManager.getCameraCharacteristics(logicalCameraId)
             val sensorRect = chars.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE) ?: Rect(0, 0, 4000, 3000)
 
-            // Correct coordinate transform for 90-degree rotated portrait camera sensor
-            val sensorX = (normalizedY * sensorRect.width()).toInt().coerceIn(0, sensorRect.width())
-            val sensorY = ((1.0f - normalizedX) * sensorRect.height()).toInt().coerceIn(0, sensorRect.height())
-            Log.d(TAG, "tapToFocus: norm=($normalizedX, $normalizedY) -> sensor=($sensorX, $sensorY)")
+            // 1. Calculate active SCALER_CROP_REGION for current zoom ratio
+            val safeZoom = _zoomRatio.value.coerceIn(0.6f, 200.0f)
+            val cropW = (sensorRect.width() / safeZoom).toInt().coerceAtLeast(16)
+            val cropH = (sensorRect.height() / safeZoom).toInt().coerceAtLeast(12)
+            val cropX = (sensorRect.width() - cropW) / 2
+            val cropY = (sensorRect.height() - cropH) / 2
+            val cropRect = Rect(cropX, cropY, cropX + cropW, cropY + cropH)
 
-            val halfArea = 250
-            val focusArea = MeteringRectangle(
-                Rect(
-                    (sensorX - halfArea).coerceAtLeast(0),
-                    (sensorY - halfArea).coerceAtLeast(0),
-                    (sensorX + halfArea).coerceAtMost(sensorRect.width()),
-                    (sensorY + halfArea).coerceAtMost(sensorRect.height())
-                ),
-                1000
+            // 2. Map normalized screen tap strictly inside cropRect
+            val sensorX = cropRect.left + (normalizedY * cropRect.width()).toInt().coerceIn(0, cropRect.width() - 1)
+            val sensorY = if (_isFrontCamera.value) {
+                cropRect.top + (normalizedX * cropRect.height()).toInt().coerceIn(0, cropRect.height() - 1)
+            } else {
+                cropRect.top + ((1.0f - normalizedX) * cropRect.height()).toInt().coerceIn(0, cropRect.height() - 1)
+            }
+
+            Log.d(TAG, "tapToFocus: norm=($normalizedX, $normalizedY) -> cropRect=$cropRect, sensor=($sensorX, $sensorY)")
+
+            val halfBox = (cropRect.width() * 0.08f).toInt().coerceIn(12, 200)
+            val focusBox = Rect(
+                (sensorX - halfBox).coerceIn(cropRect.left, cropRect.right),
+                (sensorY - halfBox).coerceIn(cropRect.top, cropRect.bottom),
+                (sensorX + halfBox).coerceIn(cropRect.left, cropRect.right),
+                (sensorY + halfBox).coerceIn(cropRect.top, cropRect.bottom)
             )
 
+            val focusArea = MeteringRectangle(focusBox, 1000)
             activeAfRegion = focusArea
             activeAeRegion = focusArea
 
@@ -508,6 +545,7 @@ class Camera2Controller(
             val cancelBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                 previewSurface?.let { addTarget(it) }
                 analysisImageReader?.surface?.let { addTarget(it) }
+                applyZoom(this, _zoomRatio.value)
                 set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL)
             }
             session.capture(cancelBuilder.build(), null, backgroundHandler)

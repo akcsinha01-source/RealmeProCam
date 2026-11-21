@@ -26,11 +26,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.realme.procam.theme.*
+import kotlin.math.exp
+import kotlin.math.ln
 import kotlin.math.roundToInt
 
 /**
  * Tactical Rotary Zooming Wheel with up to 200x Telescopic Periscope Zoom.
- * Features graduation tick marks, haptic feedback, quick presets, and fine +/- steps.
+ * Silky-smooth 120fps sliding graduation ticks with rate-limited HAL updates.
  */
 @Composable
 fun ZoomingWheel(
@@ -39,8 +41,16 @@ fun ZoomingWheel(
     modifier: Modifier = Modifier
 ) {
     val view = LocalView.current
+    var localZoom by remember { mutableFloatStateOf(currentZoom) }
+    var visualOffset by remember { mutableFloatStateOf(0f) }
+    var lastSentZoom by remember { mutableFloatStateOf(currentZoom) }
 
-    // Quick presets from 0.6x Ultra-Wide to 200x Periscope Ultra-Zoom
+    // Sync external changes (e.g. preset tapped)
+    LaunchedEffect(currentZoom) {
+        localZoom = currentZoom
+        visualOffset = (ln(currentZoom / 0.6f) * 160f)
+    }
+
     val quickPresets = listOf(0.6f, 1.0f, 3.0f, 6.0f, 10.0f, 30.0f, 60.0f, 120.0f, 200.0f)
 
     Column(
@@ -51,10 +61,10 @@ fun ZoomingWheel(
     ) {
         // 1. Current Zoom Indicator Badge
         val lensLabel = when {
-            currentZoom < 0.95f -> "0.6x ULTRA-WIDE"
-            currentZoom < 2.95f -> "1x MAIN WIDE (Sony IMX890)"
-            currentZoom < 5.95f -> "3x OPTICAL PERISCOPE (Sony IMX882)"
-            currentZoom < 10.0f -> "6x IN-SENSOR LOSSLESS CROP"
+            localZoom < 0.95f -> "0.6x ULTRA-WIDE"
+            localZoom < 2.95f -> "1x MAIN WIDE (Sony IMX890)"
+            localZoom < 5.95f -> "3x OPTICAL PERISCOPE (Sony IMX882)"
+            localZoom < 10.0f -> "6x IN-SENSOR LOSSLESS CROP"
             else -> "⚡ TELESCOPIC ULTRA-ZOOM (Max 200x)"
         }
 
@@ -64,7 +74,7 @@ fun ZoomingWheel(
                 .background(OledSurface.copy(alpha = 0.90f))
                 .border(
                     1.dp,
-                    if (currentZoom >= 3.0f) AccentCyan.copy(alpha = 0.7f) else RealmeGold.copy(alpha = 0.7f),
+                    if (localZoom >= 3.0f) AccentCyan.copy(alpha = 0.7f) else RealmeGold.copy(alpha = 0.7f),
                     RoundedCornerShape(16.dp)
                 )
                 .padding(horizontal = 14.dp, vertical = 6.dp),
@@ -72,8 +82,8 @@ fun ZoomingWheel(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = String.format("%.1fx", currentZoom),
-                color = if (currentZoom >= 3.0f) AccentCyan else RealmeGold,
+                text = String.format("%.1fx", localZoom),
+                color = if (localZoom >= 3.0f) AccentCyan else RealmeGold,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace
@@ -96,7 +106,7 @@ fun ZoomingWheel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             items(quickPresets) { preset ->
-                val isSelected = kotlin.math.abs(currentZoom - preset) < 0.25f
+                val isSelected = kotlin.math.abs(localZoom - preset) < 0.25f
                 Box(
                     modifier = Modifier
                         .padding(horizontal = 3.dp)
@@ -111,6 +121,8 @@ fun ZoomingWheel(
                         .border(1.dp, if (isSelected) Color.Transparent else OledBorder, CircleShape)
                         .clickable {
                             view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                            localZoom = preset
+                            visualOffset = (ln(preset / 0.6f) * 160f)
                             onZoomChange(preset)
                         }
                         .padding(horizontal = 9.dp, vertical = 5.dp),
@@ -129,7 +141,7 @@ fun ZoomingWheel(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 3. Tactile Continuous Zoom Wheel
+        // 3. Tactile Continuous Zoom Wheel with Silky-Smooth Drag & Sliding Marks
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -137,38 +149,52 @@ fun ZoomingWheel(
                 .clip(RoundedCornerShape(24.dp))
                 .background(OledSurface.copy(alpha = 0.85f))
                 .border(1.dp, OledBorder, RoundedCornerShape(24.dp))
-                .pointerInput(currentZoom) {
-                    detectDragGestures { change, dragAmount ->
+                .pointerInput(Unit) {
+                    detectDragGestures(
+                        onDragEnd = {
+                            val finalZoom = (localZoom * 10).roundToInt() / 10f
+                            onZoomChange(finalZoom)
+                        }
+                    ) { change, dragAmount ->
                         change.consume()
-                        val deltaX = dragAmount.x
-                        val factor = (deltaX / 180f)
-                        val newZoom = (currentZoom * (1.0f + factor)).coerceIn(0.6f, 200.0f)
-                        val roundedZoom = (newZoom * 10).roundToInt() / 10f
-                        if (roundedZoom != currentZoom) {
+                        val delta = dragAmount.x
+                        visualOffset += delta
+                        // Smooth logarithmic scaling: 0.6x to 200x
+                        val newZoom = (0.6f * exp(visualOffset / 160f)).coerceIn(0.6f, 200.0f)
+                        localZoom = newZoom
+
+                        // Dispatch throttled step updates
+                        val step = if (newZoom < 3f) 0.1f else if (newZoom < 10f) 0.2f else if (newZoom < 50f) 1.0f else 2.0f
+                        if (kotlin.math.abs(newZoom - lastSentZoom) >= step) {
                             view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                            onZoomChange(roundedZoom)
+                            lastSentZoom = (newZoom * 10).roundToInt() / 10f
+                            onZoomChange(lastSentZoom)
                         }
                     }
                 },
             contentAlignment = Alignment.Center
         ) {
-            // Drawn Graduation Ticks & Wheel Illusion
+            // Drawn Moving Graduation Ticks
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val w = size.width
                 val h = size.height
                 val centerX = w / 2f
 
-                val totalTicks = 41
-                val spacing = w / totalTicks
-                for (i in 0 until totalTicks) {
-                    val x = i * spacing
+                val tickSpacing = 16.dp.toPx()
+                val offsetMod = visualOffset % tickSpacing
+
+                val visibleCount = (w / tickSpacing).toInt() + 4
+                for (i in -visibleCount / 2..visibleCount / 2) {
+                    val x = centerX + i * tickSpacing + offsetMod
+                    if (x < 40.dp.toPx() || x > w - 40.dp.toPx()) continue
+
                     val distFromCenter = kotlin.math.abs(x - centerX)
-                    val alpha = (1.0f - (distFromCenter / centerX)).coerceIn(0f, 1f)
-                    val isMajor = i % 5 == 0
+                    val alpha = (1.0f - (distFromCenter / (centerX * 0.9f))).coerceIn(0f, 1f)
+                    val isMajor = ((i - (visualOffset / tickSpacing).toInt()) % 5) == 0
                     val tickHeight = if (isMajor) h * 0.45f else h * 0.25f
 
                     drawLine(
-                        color = (if (currentZoom >= 3.0f) AccentCyan else TextMuted).copy(alpha = alpha * 0.7f),
+                        color = (if (localZoom >= 3.0f) AccentCyan else TextMuted).copy(alpha = alpha * 0.75f),
                         start = Offset(x, (h - tickHeight) / 2f),
                         end = Offset(x, (h + tickHeight) / 2f),
                         strokeWidth = if (isMajor) 2.dp.toPx() else 1.dp.toPx()
@@ -176,7 +202,7 @@ fun ZoomingWheel(
                 }
 
                 // Center Gold/Cyan Indicator Pointer
-                val pointerColor = if (currentZoom >= 3.0f) AccentCyan else RealmeGold
+                val pointerColor = if (localZoom >= 3.0f) AccentCyan else RealmeGold
                 val path = Path().apply {
                     moveTo(centerX - 6.dp.toPx(), 4.dp.toPx())
                     lineTo(centerX + 6.dp.toPx(), 4.dp.toPx())
@@ -208,8 +234,11 @@ fun ZoomingWheel(
                         .background(OledCard)
                         .clickable {
                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            val step = if (currentZoom <= 3f) 0.2f else if (currentZoom <= 10f) 0.5f else 5.0f
-                            onZoomChange((currentZoom - step).coerceAtLeast(0.6f))
+                            val step = if (localZoom <= 3f) 0.2f else if (localZoom <= 10f) 0.5f else 5.0f
+                            val target = (localZoom - step).coerceAtLeast(0.6f)
+                            localZoom = target
+                            visualOffset = (ln(target / 0.6f) * 160f)
+                            onZoomChange(target)
                         },
                     contentAlignment = Alignment.Center
                 ) {
@@ -223,8 +252,11 @@ fun ZoomingWheel(
                         .background(OledCard)
                         .clickable {
                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            val step = if (currentZoom < 3f) 0.2f else if (currentZoom < 10f) 0.5f else 5.0f
-                            onZoomChange((currentZoom + step).coerceAtMost(200.0f))
+                            val step = if (localZoom < 3f) 0.2f else if (localZoom < 10f) 0.5f else 5.0f
+                            val target = (localZoom + step).coerceAtMost(200.0f)
+                            localZoom = target
+                            visualOffset = (ln(target / 0.6f) * 160f)
+                            onZoomChange(target)
                         },
                     contentAlignment = Alignment.Center
                 ) {
