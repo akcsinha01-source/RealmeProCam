@@ -70,7 +70,7 @@ class HybridFocusStacker(
         COMPLETED
     }
 
-    private val _stackingMethod = MutableStateFlow(StackingMethod.FULL_FRAME_1X)
+    private val _stackingMethod = MutableStateFlow(StackingMethod.HYBRID_1X_3X)
     val stackingMethod: StateFlow<StackingMethod> = _stackingMethod.asStateFlow()
 
     private val _phase = MutableStateFlow(StackingPhase.IDLE)
@@ -104,14 +104,21 @@ class HybridFocusStacker(
      */
     fun startDualLensSequence() {
         _phase.value = StackingPhase.STEP1_NEAR_PROMPT
+        nearForegroundBitmap = null
+        farBackgroundBitmap = null
+        _ghostOverlayBitmap.value = null
         cameraController.switchLens(LensType.MAIN_WIDE)
         cameraController.resetAutoFocus() // Use full active PDAF autofocus on tapped subject!
         
         if (_stackingMethod.value == StackingMethod.FULL_FRAME_1X) {
-            _statusMessage.value = "सामने वाले विषय पर टैप करें (1x Edge-to-Edge Stacking)"
+            _statusMessage.value = "सामने वाले नज़दीकी विषय पर टैप करें (1x Edge-to-Edge Stacking)"
         } else {
-            _statusMessage.value = "सामने वाले विषय पर टैप करें (Main 1x Active)"
+            _statusMessage.value = "सामने वाले नज़दीकी विषय पर टैप करें (1x Main Lens Active)"
         }
+    }
+
+    fun resetToStep1() {
+        startDualLensSequence()
     }
 
     /**
@@ -220,13 +227,23 @@ class HybridFocusStacker(
 
             withContext(Dispatchers.Main) {
                 _phase.value = StackingPhase.COMPLETED
-                _statusMessage.value = "हाइपर-शार्प फोटो गैलरी में सुरक्षित!"
+                _statusMessage.value = "3x टेलीस्कोपिक फोटो गैलरी में सुरक्षित!"
                 _ghostOverlayBitmap.value = null
                 nearForegroundBitmap = null
                 farBackgroundBitmap = null
-                // Reset camera back to continuous autofocus for next shot
+                
+                // Automatically switch physical lens back to 1x Main Wide
+                cameraController.switchLens(LensType.MAIN_WIDE)
                 cameraController.resetAutoFocus()
                 onComplete(savedUri)
+
+                // Auto-reset back to Step 1 after 2.5s so user can instantly take next photo
+                coroutineScope.launch {
+                    delay(2500)
+                    if (_phase.value == StackingPhase.COMPLETED) {
+                        startDualLensSequence()
+                    }
+                }
             }
         }
     }

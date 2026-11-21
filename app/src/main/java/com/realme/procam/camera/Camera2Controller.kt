@@ -386,6 +386,7 @@ class Camera2Controller(
             // Correct coordinate transform for 90-degree rotated portrait camera sensor
             val sensorX = (normalizedY * sensorRect.width()).toInt().coerceIn(0, sensorRect.width())
             val sensorY = ((1.0f - normalizedX) * sensorRect.height()).toInt().coerceIn(0, sensorRect.height())
+            Log.d(TAG, "tapToFocus: norm=($normalizedX, $normalizedY) -> sensor=($sensorX, $sensorY)")
 
             val halfArea = 250
             val focusArea = MeteringRectangle(
@@ -432,25 +433,66 @@ class Camera2Controller(
 
     /**
      * Captures a single still high-resolution Bitmap frame in memory.
+     * Guaranteed fail-safe timeout prevents shutter button lockups.
      */
     fun captureStillBitmap(onCaptured: (Bitmap) -> Unit) {
-        val device = cameraDevice ?: return
-        val session = captureSession ?: return
-        val jReader = jpegImageReader ?: return
+        val device = cameraDevice ?: run {
+            _isProcessingCapture.value = false
+            return
+        }
+        val session = captureSession ?: run {
+            _isProcessingCapture.value = false
+            return
+        }
+        val jReader = jpegImageReader ?: run {
+            _isProcessingCapture.value = false
+            return
+        }
 
         _isProcessingCapture.value = true
 
-        jReader.setOnImageAvailableListener({ reader ->
-            val image = reader.acquireLatestImage()
-            if (image != null) {
-                val buffer = image.planes[0].buffer
-                val bytes = ByteArray(buffer.remaining())
-                buffer.get(bytes)
-                image.close()
-
-                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        // 2-second timeout guard: Never leave capture lock stuck
+        val timeoutRunnable = Runnable {
+            if (_isProcessingCapture.value) {
+                Log.w(TAG, "Capture still bitmap timed out; releasing lock")
                 _isProcessingCapture.value = false
-                onCaptured(bitmap)
+                try {
+                    jReader.setOnImageAvailableListener(null, null)
+                } catch (_: Exception) {}
+            }
+        }
+        backgroundHandler.postDelayed(timeoutRunnable, 2000)
+
+        jReader.setOnImageAvailableListener({ reader ->
+            backgroundHandler.removeCallbacks(timeoutRunnable)
+            var image: Image? = null
+            try {
+                image = reader.acquireLatestImage() ?: reader.acquireNextImage()
+                if (image != null) {
+                    val buffer = image.planes[0].buffer
+                    val bytes = ByteArray(buffer.remaining())
+                    buffer.get(bytes)
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    
+                    // Immediately unregister listener to prevent duplicate events
+                    try {
+                        reader.setOnImageAvailableListener(null, null)
+                    } catch (_: Exception) {}
+
+                    _isProcessingCapture.value = false
+                    if (bitmap != null) {
+                        onCaptured(bitmap)
+                    } else {
+                        Log.e(TAG, "Bitmap decoding returned null from JPEG buffer")
+                    }
+                } else {
+                    _isProcessingCapture.value = false
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error acquiring JPEG still frame", e)
+                _isProcessingCapture.value = false
+            } finally {
+                image?.close()
             }
         }, backgroundHandler)
 
@@ -463,10 +505,27 @@ class Camera2Controller(
                 set(CaptureRequest.JPEG_QUALITY, 100.toByte())
                 set(CaptureRequest.JPEG_ORIENTATION, 90) // Portrait standard
             }
-            session.capture(captureBuilder.build(), null, backgroundHandler)
+            session.capture(captureBuilder.build(), object : CameraCaptureSession.CaptureCallback() {
+                override fun onCaptureFailed(
+                    session: CameraCaptureSession,
+                    request: CaptureRequest,
+                    failure: CaptureFailure
+                ) {
+                    Log.e(TAG, "Capture failed callback reason: ${failure.reason}")
+                    backgroundHandler.removeCallbacks(timeoutRunnable)
+                    _isProcessingCapture.value = false
+                    try {
+                        jReader.setOnImageAvailableListener(null, null)
+                    } catch (_: Exception) {}
+                }
+            }, backgroundHandler)
         } catch (e: Exception) {
-            Log.e(TAG, "Capture failed", e)
+            Log.e(TAG, "Capture failed with exception", e)
+            backgroundHandler.removeCallbacks(timeoutRunnable)
             _isProcessingCapture.value = false
+            try {
+                jReader.setOnImageAvailableListener(null, null)
+            } catch (_: Exception) {}
         }
     }
 

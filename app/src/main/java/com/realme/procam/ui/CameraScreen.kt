@@ -2,10 +2,12 @@ package com.realme.procam.ui
 
 import android.graphics.SurfaceTexture
 import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.Surface
 import android.view.TextureView
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,10 +26,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -38,6 +44,9 @@ import com.realme.procam.theme.*
 import com.realme.procam.ui.components.*
 import com.realme.procam.ui.guide.FeatureGuideScreen
 import com.realme.procam.ui.viewmodel.CameraViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @Composable
 fun CameraScreen(
@@ -84,19 +93,9 @@ fun CameraScreen(
             .fillMaxSize()
             .background(Black)
     ) {
-        // 1. Android TextureView Viewfinder with Tap-To-Focus
+        // 1. Android TextureView Viewfinder
         AndroidView(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures { offset ->
-                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        tapRingPosition = offset
-                        val normalizedX = (offset.x / size.width).coerceIn(0f, 1f)
-                        val normalizedY = (offset.y / size.height).coerceIn(0f, 1f)
-                        viewModel.cameraController.tapToFocus(normalizedX, normalizedY)
-                    }
-                },
+            modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 TextureView(ctx).apply {
                     surfaceTextureListener = object : TextureView.SurfaceTextureListener {
@@ -109,8 +108,33 @@ fun CameraScreen(
                         override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean = true
                         override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
                     }
+                    setOnTouchListener { v, event ->
+                        if (event.action == MotionEvent.ACTION_UP) {
+                            val normX = (event.x / v.width.toFloat()).coerceIn(0f, 1f)
+                            val normY = (event.y / v.height.toFloat()).coerceIn(0f, 1f)
+                            viewModel.cameraController.tapToFocus(normX, normY)
+                            tapRingPosition = Offset(event.x, event.y)
+                            v.performClick()
+                        }
+                        true
+                    }
                 }
             }
+        )
+
+        // Viewfinder Touch Layer for Tap-To-Focus
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures { offset ->
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        tapRingPosition = offset
+                        val normalizedX = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                        val normalizedY = (offset.y / size.height.toFloat()).coerceIn(0f, 1f)
+                        viewModel.cameraController.tapToFocus(normalizedX, normalizedY)
+                    }
+                }
         )
 
         // 2. Framing Grid Overlay (Thirds / Golden / Cross)
@@ -132,24 +156,64 @@ fun CameraScreen(
                 .padding(start = 16.dp, top = 80.dp)
         )
 
-        // 6. Tap-To-Focus Animated Ring
+        // 6. Tap-To-Focus Animated Ring (Pixel-perfect centered at tap with spring bounce & auto-dismiss)
         tapRingPosition?.let { pos ->
-            val infiniteTransition = rememberInfiniteTransition(label = "FocusRing")
-            val ringScale by infiniteTransition.animateFloat(
-                initialValue = 1.3f,
-                targetValue = 0.9f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(400, easing = FastOutSlowInEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "FocusScale"
-            )
+            val density = LocalDensity.current
+            val ringRadiusPx = with(density) { 36.dp.toPx() }
+            val animScale = remember(pos) { Animatable(1.5f) }
+
+            LaunchedEffect(pos) {
+                launch {
+                    animScale.animateTo(
+                        targetValue = 1.0f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessLow
+                        )
+                    )
+                }
+                delay(2200)
+                tapRingPosition = null
+            }
+
             Box(
                 modifier = Modifier
-                    .offset(x = (pos.x.dp / 2.7f) - 30.dp, y = (pos.y.dp / 2.7f) - 30.dp)
-                    .size(60.dp * ringScale)
-                    .border(1.5.dp, RealmeGold, CircleShape)
-            )
+                    .offset {
+                        IntOffset(
+                            (pos.x - ringRadiusPx).roundToInt(),
+                            (pos.y - ringRadiusPx).roundToInt()
+                        )
+                    }
+                    .size(72.dp)
+                    .graphicsLayer {
+                        scaleX = animScale.value
+                        scaleY = animScale.value
+                    }
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val strokePx = 2.5.dp.toPx()
+                    val ringColor = Color(0xFFFFD700) // Vibrant Gold
+                    
+                    // Outer focus ring
+                    drawCircle(
+                        color = ringColor,
+                        style = Stroke(width = strokePx)
+                    )
+                    // Center focus dot
+                    drawCircle(
+                        color = ringColor,
+                        radius = 3.5.dp.toPx()
+                    )
+                    // 4 viewfinder bracket lines (Top, Bottom, Left, Right)
+                    val r = size.minDimension / 2f
+                    val c = center
+                    val tickLen = 7.dp.toPx()
+                    drawLine(ringColor, Offset(c.x, c.y - r), Offset(c.x, c.y - r + tickLen), strokeWidth = strokePx)
+                    drawLine(ringColor, Offset(c.x, c.y + r), Offset(c.x, c.y + r - tickLen), strokeWidth = strokePx)
+                    drawLine(ringColor, Offset(c.x - r, c.y), Offset(c.x - r + tickLen, c.y), strokeWidth = strokePx)
+                    drawLine(ringColor, Offset(c.x + r, c.y), Offset(c.x + r - tickLen, c.y), strokeWidth = strokePx)
+                }
+            }
         }
 
         // 7. Top Status Bar & Controls (RAW, ZEBRA, GRID, GUIDE)
@@ -478,25 +542,39 @@ private fun ShutterBar(
         }
 
         // Master Shutter Button
+        val isTeleStep = activeMode == CameraMode.DUAL_FOCUS && 
+            (stackerPhase == HybridFocusStacker.StackingPhase.STEP2_GUIDED_TRANSITION || stackerPhase == HybridFocusStacker.StackingPhase.STEP3_FAR_PROMPT)
+        val canClick = !isProcessing || stackerPhase == HybridFocusStacker.StackingPhase.COMPLETED || stackerPhase == HybridFocusStacker.StackingPhase.IDLE || stackerPhase == HybridFocusStacker.StackingPhase.STEP1_NEAR_PROMPT
+
         Box(
             modifier = Modifier
                 .size(78.dp)
                 .clip(CircleShape)
                 .background(Color.Transparent)
                 .border(3.dp, if (activeMode == CameraMode.DUAL_FOCUS) AccentCyan else RealmeGold, CircleShape)
-                .clickable(enabled = !isProcessing, onClick = onShutterClick)
+                .clickable(enabled = canClick, onClick = onShutterClick)
                 .padding(6.dp),
             contentAlignment = Alignment.Center
         ) {
-            if (isProcessing) {
+            if (isProcessing && stackerPhase != HybridFocusStacker.StackingPhase.COMPLETED && stackerPhase != HybridFocusStacker.StackingPhase.IDLE) {
                 CircularProgressIndicator(color = RealmeGold, strokeWidth = 3.dp, modifier = Modifier.fillMaxSize())
             } else {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(CircleShape)
-                        .background(if (activeMode == CameraMode.DUAL_FOCUS) AccentCyan else Color.White)
-                )
+                        .background(if (activeMode == CameraMode.DUAL_FOCUS) AccentCyan else Color.White),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isTeleStep) {
+                        Icon(
+                            Icons.Default.ZoomIn,
+                            contentDescription = "3x Telescopic Shot",
+                            tint = Black,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
             }
         }
 
