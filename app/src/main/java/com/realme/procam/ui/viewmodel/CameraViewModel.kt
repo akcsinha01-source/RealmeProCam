@@ -180,20 +180,15 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                         focusStacker.startDualLensSequence()
                         focusStacker.captureStep1Near { uri ->
                             _lastCapturedUri.value = uri
-                            _capturedNotification.value = "3x टेलीस्कोपिक डीप फोकस फोटो तैयार!"
-                        }
-                    }
-                    HybridFocusStacker.StackingPhase.STEP2_GUIDED_TRANSITION,
-                    HybridFocusStacker.StackingPhase.STEP3_FAR_PROMPT -> {
-                        focusStacker.captureStep3Far { uri ->
-                            _lastCapturedUri.value = uri
-                            _capturedNotification.value = "3x टेलीस्कोपिक डीप फोकस फोटो तैयार!"
+                            _capturedNotification.value = "100% डीप फोकस फोटो तैयार!"
                         }
                     }
                     else -> {
-                        // Reset to Step 1 if stuck in intermediate state
-                        Log.d("CameraViewModel", "Resetting DualLens sequence from phase ${focusStacker.phase.value}")
                         focusStacker.startDualLensSequence()
+                        focusStacker.captureStep1Near { uri ->
+                            _lastCapturedUri.value = uri
+                            _capturedNotification.value = "100% डीप फोकस फोटो तैयार!"
+                        }
                     }
                 }
             }

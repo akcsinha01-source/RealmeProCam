@@ -48,129 +48,58 @@ fun DualLensProgressIndicator(
             .padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Stacking Method Toggle Pills
-        Row(
+        // Mode Header Badge
+        Box(
             modifier = Modifier
                 .clip(CircleShape)
-                .background(OledCard)
-                .border(1.dp, OledBorder, CircleShape)
-                .padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                .background(RealmeGold.copy(alpha = 0.15f))
+                .border(1.dp, RealmeGold.copy(alpha = 0.6f), CircleShape)
+                .padding(horizontal = 12.dp, vertical = 4.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(if (stackingMethod == StackingMethod.FULL_FRAME_1X) RealmeGold else Color.Transparent)
-                    .clickable { onToggleMethod(StackingMethod.FULL_FRAME_1X) }
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = "1x FULL FRAME (Edge-to-Edge)",
-                    color = if (stackingMethod == StackingMethod.FULL_FRAME_1X) Black else TextSecondary,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(if (stackingMethod == StackingMethod.HYBRID_1X_3X) RealmeGold else Color.Transparent)
-                    .clickable { onToggleMethod(StackingMethod.HYBRID_1X_3X) }
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = "1x+3x HYBRID TELE",
-                    color = if (stackingMethod == StackingMethod.HYBRID_1X_3X) Black else TextSecondary,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            Text(
+                text = "1-TAP OPTICAL FOCUS STACKING (SAME ZOOM)",
+                color = RealmeGold,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.5.sp
+            )
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Step Icons Row
-        if (stackingMethod == StackingMethod.FULL_FRAME_1X) {
-            // Simplified, Clean Full-Frame 1x Steps
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                StepNode(
-                    step = 1,
-                    title = "Near Tap",
-                    icon = Icons.Default.FilterCenterFocus,
-                    isCurrent = phase == StackingPhase.STEP1_NEAR_PROMPT || phase == StackingPhase.STEP1_CAPTURING,
-                    isCompleted = phase > StackingPhase.STEP1_CAPTURING
-                )
+        // Step Icons Row (Always Same Zoom / Zero Parallax)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            StepNode(
+                step = 1,
+                title = "Near Tap",
+                icon = Icons.Default.FilterCenterFocus,
+                isCurrent = phase == StackingPhase.STEP1_NEAR_PROMPT || phase == StackingPhase.STEP1_CAPTURING,
+                isCompleted = phase > StackingPhase.STEP1_CAPTURING
+            )
 
-                StepConnector(isCompleted = phase > StackingPhase.STEP1_CAPTURING)
+            StepConnector(isCompleted = phase > StackingPhase.STEP1_CAPTURING)
 
-                StepNode(
-                    step = 2,
-                    title = "Far 1x (Auto)",
-                    icon = Icons.Default.ZoomIn,
-                    isCurrent = phase == StackingPhase.STEP3_CAPTURING,
-                    isCompleted = phase > StackingPhase.STEP3_CAPTURING
-                )
+            StepNode(
+                step = 2,
+                title = "Far (Auto)",
+                icon = Icons.Default.ZoomIn,
+                isCurrent = phase == StackingPhase.STEP3_CAPTURING,
+                isCompleted = phase > StackingPhase.STEP3_CAPTURING
+            )
 
-                StepConnector(isCompleted = phase >= StackingPhase.STEP4_BLENDING)
+            StepConnector(isCompleted = phase >= StackingPhase.STEP4_BLENDING)
 
-                StepNode(
-                    step = 3,
-                    title = "100% Sharp",
-                    icon = Icons.Default.Layers,
-                    isCurrent = phase == StackingPhase.STEP4_BLENDING,
-                    isCompleted = phase == StackingPhase.COMPLETED
-                )
-            }
-        } else {
-            // Hybrid 1x + 3x Periscope Steps
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                StepNode(
-                    step = 1,
-                    title = "Near (1x)",
-                    icon = Icons.Default.FilterCenterFocus,
-                    isCurrent = phase == StackingPhase.STEP1_NEAR_PROMPT || phase == StackingPhase.STEP1_CAPTURING,
-                    isCompleted = phase > StackingPhase.STEP1_CAPTURING
-                )
-
-                StepConnector(isCompleted = phase > StackingPhase.STEP1_CAPTURING)
-
-                StepNode(
-                    step = 2,
-                    title = "Ghost Guide",
-                    icon = Icons.Default.ZoomIn,
-                    isCurrent = phase == StackingPhase.STEP2_GUIDED_TRANSITION,
-                    isCompleted = phase > StackingPhase.STEP2_GUIDED_TRANSITION
-                )
-
-                StepConnector(isCompleted = phase > StackingPhase.STEP2_GUIDED_TRANSITION)
-
-                StepNode(
-                    step = 3,
-                    title = "Far (3x)",
-                    icon = Icons.Default.ZoomIn,
-                    isCurrent = phase == StackingPhase.STEP3_FAR_PROMPT || phase == StackingPhase.STEP3_CAPTURING,
-                    isCompleted = phase > StackingPhase.STEP3_CAPTURING
-                )
-
-                StepConnector(isCompleted = phase > StackingPhase.STEP3_CAPTURING)
-
-                StepNode(
-                    step = 4,
-                    title = "AI Merge",
-                    icon = Icons.Default.Layers,
-                    isCurrent = phase == StackingPhase.STEP4_BLENDING,
-                    isCompleted = phase == StackingPhase.COMPLETED
-                )
-            }
+            StepNode(
+                step = 3,
+                title = "100% Sharp",
+                icon = Icons.Default.Layers,
+                isCurrent = phase == StackingPhase.STEP4_BLENDING,
+                isCompleted = phase == StackingPhase.COMPLETED
+            )
         }
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -191,7 +120,7 @@ fun DualLensProgressIndicator(
 
             Text(
                 text = statusMessage,
-                color = if (phase == StackingPhase.STEP2_GUIDED_TRANSITION || phase == StackingPhase.STEP3_FAR_PROMPT) AccentCyan else RealmeGold,
+                color = if (phase == StackingPhase.COMPLETED) FocusGreen else RealmeGold,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold
             )

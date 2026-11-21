@@ -100,21 +100,15 @@ class HybridFocusStacker(
     }
 
     /**
-     * Initializes Step 1: Binds 1x Main Wide Lens, enables active PDAF tap-to-focus.
+     * Initializes Step 1 on the current active lens with active PDAF tap-to-focus.
      */
     fun startDualLensSequence() {
         _phase.value = StackingPhase.STEP1_NEAR_PROMPT
         nearForegroundBitmap = null
         farBackgroundBitmap = null
         _ghostOverlayBitmap.value = null
-        cameraController.switchLens(LensType.MAIN_WIDE)
         cameraController.resetAutoFocus() // Use full active PDAF autofocus on tapped subject!
-        
-        if (_stackingMethod.value == StackingMethod.FULL_FRAME_1X) {
-            _statusMessage.value = "सामने वाले नज़दीकी विषय पर टैप करें (1x Edge-to-Edge Stacking)"
-        } else {
-            _statusMessage.value = "सामने वाले नज़दीकी विषय पर टैप करें (1x Main Lens Active)"
-        }
+        _statusMessage.value = "नज़दीकी विषय पर टैप करके शटर दबाएं (Same-Zoom Deep Focus)"
     }
 
     fun resetToStep1() {
@@ -122,7 +116,9 @@ class HybridFocusStacker(
     }
 
     /**
-     * Triggers capture for Step 1.
+     * 1-Tap True Optical Focus Stacking:
+     * Captures Shot 1 (Near Focus) and Shot 2 (Infinity Focus) on the EXACT SAME LENS at the EXACT SAME ZOOM!
+     * Perfectly overlaps with ZERO parallax, eliminating ghosting and blur.
      */
     fun captureStep1Near(onComplete: ((Uri?) -> Unit)? = null) {
         _phase.value = StackingPhase.STEP1_CAPTURING
@@ -131,25 +127,19 @@ class HybridFocusStacker(
         cameraController.captureStillBitmap { shot1 ->
             nearForegroundBitmap = shot1
 
-            if (_stackingMethod.value == StackingMethod.FULL_FRAME_1X) {
-                // Method 1: Automatic 1x Full Frame Deep Focus Stacking
-                // Automatically shift focus to Infinity (0.0 diopters) on the SAME 1x sensor!
-                _phase.value = StackingPhase.STEP3_CAPTURING
-                _statusMessage.value = "दूर का बैकग्राउंड कैप्चर हो रहा है (1x Infinity Focus)..."
-                cameraController.setFocusDistance(RealmeCameraConstants.FOCUS_INFINITY)
+            // Automatically shift focus to Infinity (0.0 diopters) on the SAME lens!
+            _phase.value = StackingPhase.STEP3_CAPTURING
+            _statusMessage.value = "बैकग्राउंड कैप्चर हो रहा है (Infinity Focus)..."
+            cameraController.setFocusDistance(RealmeCameraConstants.FOCUS_INFINITY)
 
-                coroutineScope.launch {
-                    delay(200) // Allow lens voice coil motor to settle at infinity
-                    cameraController.captureStillBitmap { shot2 ->
-                        farBackgroundBitmap = shot2
-                        _phase.value = StackingPhase.STEP4_BLENDING
-                        _statusMessage.value = "100% फुल-फ्रेम AI फोकस स्टैकिंग जारी है..."
-                        processAndStackFrames(1.0f, onComplete ?: {})
-                    }
+            coroutineScope.launch {
+                delay(150) // Allow lens voice coil motor to settle at infinity
+                cameraController.captureStillBitmap { shot2 ->
+                    farBackgroundBitmap = shot2
+                    _phase.value = StackingPhase.STEP4_BLENDING
+                    _statusMessage.value = "AI Focus Stacking & Alignment जारी है..."
+                    processAndStackFrames(1.0f, onComplete ?: {})
                 }
-            } else {
-                // Method 2: Hybrid 1x Main + 3x Periscope Telephoto Transition
-                prepareStep2TelephotoTransition(shot1)
             }
         }
     }
@@ -227,19 +217,17 @@ class HybridFocusStacker(
 
             withContext(Dispatchers.Main) {
                 _phase.value = StackingPhase.COMPLETED
-                _statusMessage.value = "3x टेलीस्कोपिक फोटो गैलरी में सुरक्षित!"
+                _statusMessage.value = "100% डीप फोकस फोटो गैलरी में सुरक्षित!"
                 _ghostOverlayBitmap.value = null
                 nearForegroundBitmap = null
                 farBackgroundBitmap = null
                 
-                // Automatically switch physical lens back to 1x Main Wide
-                cameraController.switchLens(LensType.MAIN_WIDE)
                 cameraController.resetAutoFocus()
                 onComplete(savedUri)
 
-                // Auto-reset back to Step 1 after 2.5s so user can instantly take next photo
+                // Auto-reset back to Step 1 after 1.5s so user can instantly take next photo
                 coroutineScope.launch {
-                    delay(2500)
+                    delay(1500)
                     if (_phase.value == StackingPhase.COMPLETED) {
                         startDualLensSequence()
                     }
@@ -248,16 +236,14 @@ class HybridFocusStacker(
         }
     }
 
-    private fun performFallbackBlend(main: Bitmap, tele: Bitmap, output: Bitmap, scaleRatio: Float) {
+    private fun performFallbackBlend(near: Bitmap, far: Bitmap, output: Bitmap, scaleRatio: Float) {
         val canvas = Canvas(output)
-        canvas.drawBitmap(main, 0f, 0f, null)
-
+        canvas.drawBitmap(near, 0f, 0f, null)
         val paint = Paint().apply {
-            alpha = 180
+            alpha = 140
         }
-        if (scaleRatio > 1.5f) {
-            val destRect = Rect(
-                (main.width * 0.25f).toInt(),
+        canvas.drawBitmap(far, 0f, 0f, paint)
+    }
                 (main.height * 0.25f).toInt(),
                 (main.width * 0.75f).toInt(),
                 (main.height * 0.75f).toInt()

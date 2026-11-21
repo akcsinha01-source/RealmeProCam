@@ -13,10 +13,6 @@
 
 namespace {
 
-struct PixelRGB {
-    uint8_t r, g, b, a;
-};
-
 // Convert ARGB_8888 bitmap to grayscale float plane
 void extractGrayscale(const uint32_t* src, float* dst, int width, int height) {
     for (int y = 0; y < height; ++y) {
@@ -31,19 +27,24 @@ void extractGrayscale(const uint32_t* src, float* dst, int width, int height) {
     }
 }
 
-// Compute Modified Laplacian Focus Measure (SML)
-void computeModifiedLaplacian(const float* gray, float* focusMap, int width, int height, int step = 1) {
-    for (int y = step; y < height - step; ++y) {
-        for (int x = step; x < width - step; ++x) {
-            float center = gray[y * width + x];
-            float lx = std::abs(2.0f * center - gray[y * width + (x - step)] - gray[y * width + (x + step)]);
-            float ly = std::abs(2.0f * center - gray[(y - step) * width + x] - gray[(y + step) * width + x]);
-            focusMap[y * width + x] = lx + ly;
+// Compute Sum of Modified Laplacian (SML) for multi-frequency edge detection
+void computeModifiedLaplacian(const float* gray, float* focusMap, int width, int height) {
+    for (int y = 2; y < height - 2; ++y) {
+        for (int x = 2; x < width - 2; ++x) {
+            int idx = y * width + x;
+            float c = gray[idx];
+            // Step 1
+            float lx1 = std::abs(2.0f * c - gray[idx - 1] - gray[idx + 1]);
+            float ly1 = std::abs(2.0f * c - gray[idx - width] - gray[idx + width]);
+            // Step 2
+            float lx2 = std::abs(2.0f * c - gray[idx - 2] - gray[idx + 2]);
+            float ly2 = std::abs(2.0f * c - gray[idx - 2 * width] - gray[idx + 2 * width]);
+            focusMap[idx] = lx1 + ly1 + 0.5f * (lx2 + ly2);
         }
     }
 }
 
-// Box filter / Gaussian blur on focus map to obtain region confidence
+// Separable box filter for smooth regional sharpness confidence
 void smoothFocusMap(const float* src, float* dst, int width, int height, int radius) {
     std::vector<float> temp(width * height, 0.0f);
 
@@ -80,43 +81,6 @@ void smoothFocusMap(const float* src, float* dst, int width, int height, int rad
     }
 }
 
-// Bilinear sampling from ARGB_8888 buffer
-uint32_t sampleBilinear(const uint32_t* src, int w, int h, float x, float y) {
-    if (x < 0 || x >= w - 1 || y < 0 || y >= h - 1) {
-        return 0xFF000000; // Transparent or black boundary
-    }
-    int x0 = static_cast<int>(x);
-    int y0 = static_cast<int>(y);
-    int x1 = x0 + 1;
-    int y1 = y0 + 1;
-    float fx = x - x0;
-    float fy = y - y0;
-
-    auto unpack = [](uint32_t p) {
-        return std::array<float, 4>{
-            static_cast<float>(p & 0xFF),
-            static_cast<float>((p >> 8) & 0xFF),
-            static_cast<float>((p >> 16) & 0xFF),
-            static_cast<float>((p >> 24) & 0xFF)
-        };
-    };
-
-    auto c00 = unpack(src[y0 * w + x0]);
-    auto c10 = unpack(src[y0 * w + x1]);
-    auto c01 = unpack(src[y1 * w + x0]);
-    auto c11 = unpack(src[y1 * w + x1]);
-
-    uint32_t out = 0;
-    for (int i = 0; i < 4; ++i) {
-        float top = c00[i] * (1.0f - fx) + c10[i] * fx;
-        float bottom = c01[i] * (1.0f - fx) + c11[i] * fx;
-        float val = top * (1.0f - fy) + bottom * fy;
-        uint32_t ival = static_cast<uint32_t>(std::clamp(val, 0.0f, 255.0f));
-        out |= (ival << (i * 8));
-    }
-    return out;
-}
-
 } // namespace
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -126,112 +90,127 @@ Java_com_realme_procam_processing_HybridFocusStacker_nativeAlignAndStack(
     jobject bmpMainNear,
     jobject bmpTeleFar,
     jobject bmpOutput,
-    jfloat opticalScaleRatio, // ~3.04f for Realme 14 Pro+ (73mm eq / 24mm eq)
+    jfloat opticalScaleRatio,
     jboolean usePyramid
 ) {
-    AndroidBitmapInfo infoMain, infoTele, infoOut;
-    void* pixelsMain = nullptr;
-    void* pixelsTele = nullptr;
+    AndroidBitmapInfo infoNear, infoFar, infoOut;
+    void* pixelsNear = nullptr;
+    void* pixelsFar = nullptr;
     void* pixelsOut = nullptr;
 
-    if (AndroidBitmap_getInfo(env, bmpMainNear, &infoMain) < 0 ||
-        AndroidBitmap_getInfo(env, bmpTeleFar, &infoTele) < 0 ||
+    if (AndroidBitmap_getInfo(env, bmpMainNear, &infoNear) < 0 ||
+        AndroidBitmap_getInfo(env, bmpTeleFar, &infoFar) < 0 ||
         AndroidBitmap_getInfo(env, bmpOutput, &infoOut) < 0) {
         LOGE("Failed to get AndroidBitmapInfo");
         return JNI_FALSE;
     }
 
-    if (AndroidBitmap_lockPixels(env, bmpMainNear, &pixelsMain) < 0 ||
-        AndroidBitmap_lockPixels(env, bmpTeleFar, &pixelsTele) < 0 ||
+    if (AndroidBitmap_lockPixels(env, bmpMainNear, &pixelsNear) < 0 ||
+        AndroidBitmap_lockPixels(env, bmpTeleFar, &pixelsFar) < 0 ||
         AndroidBitmap_lockPixels(env, bmpOutput, &pixelsOut) < 0) {
         LOGE("Failed to lock bitmap pixels");
         return JNI_FALSE;
     }
 
-    int width = infoMain.width;
-    int height = infoMain.height;
-    int teleW = infoTele.width;
-    int teleH = infoTele.height;
+    int width = infoNear.width;
+    int height = infoNear.height;
 
-    const uint32_t* srcMain = static_cast<const uint32_t*>(pixelsMain);
-    const uint32_t* srcTele = static_cast<const uint32_t*>(pixelsTele);
+    const uint32_t* srcNear = static_cast<const uint32_t*>(pixelsNear);
+    const uint32_t* srcFar = static_cast<const uint32_t*>(pixelsFar);
     uint32_t* outPixels = static_cast<uint32_t*>(pixelsOut);
 
-    LOGD("Focus Stacker running: Main %dx%d, Tele %dx%d, scale: %.2f", width, height, teleW, teleH, opticalScaleRatio);
+    LOGD("Focus Stacker running: %dx%d (Same Zoom / Same Lens Optical Stacking)", width, height);
 
-    // Step 1: Compute coordinate mapping for Telephoto (3x) onto Main (1x) frame
-    // The telephoto covers the center region [cx - w/(2*scale), cy - h/(2*scale)]
-    float cx = width * 0.5f;
-    float cy = height * 0.5f;
-    float tcx = teleW * 0.5f;
-    float tcy = teleH * 0.5f;
+    // Step 1: Grayscale extraction
+    std::vector<float> grayNear(width * height);
+    std::vector<float> grayFar(width * height);
+    extractGrayscale(srcNear, grayNear.data(), width, height);
+    extractGrayscale(srcFar, grayFar.data(), width, height);
 
-    // Buffer for telephoto warped into Main image's frame
-    std::vector<uint32_t> warpedTele(width * height, 0);
+    // Step 2: Global Hand-Shake & Focus Breathing Alignment
+    // Downsample by 4x to quickly search for best translation offset within [-16, +16] px
+    int ds = 4;
+    int dsW = width / ds;
+    int dsH = height / ds;
+    std::vector<float> dsNear(dsW * dsH);
+    std::vector<float> dsFar(dsW * dsH);
 
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            // Map main (x, y) to telephoto coordinates (tx, ty)
-            float tx = tcx + (x - cx) * opticalScaleRatio;
-            float ty = tcy + (y - cy) * opticalScaleRatio;
-
-            if (tx >= 0 && tx < teleW && ty >= 0 && ty < teleH) {
-                warpedTele[y * width + x] = sampleBilinear(srcTele, teleW, teleH, tx, ty);
-            } else {
-                warpedTele[y * width + x] = 0; // Out of telephoto FOV
-            }
+    for (int dy = 0; dy < dsH; ++dy) {
+        for (int dx = 0; dx < dsW; ++dx) {
+            dsNear[dy * dsW + dx] = grayNear[(dy * ds) * width + (dx * ds)];
+            dsFar[dy * dsW + dx] = grayFar[(dy * ds) * width + (dx * ds)];
         }
     }
 
-    // Step 2: Compute Sharpness Maps for Foreground (Main 1x) vs Background (Telephoto 3x)
-    std::vector<float> grayMain(width * height);
-    std::vector<float> grayTele(width * height);
-    std::vector<float> focusMain(width * height, 0.0f);
-    std::vector<float> focusTele(width * height, 0.0f);
-    std::vector<float> smoothMain(width * height, 0.0f);
-    std::vector<float> smoothTele(width * height, 0.0f);
+    int bestDx = 0;
+    int bestDy = 0;
+    float minSAD = 1e20f;
+    int maxShift = 12 / ds;
 
-    extractGrayscale(srcMain, grayMain.data(), width, height);
-    extractGrayscale(warpedTele.data(), grayTele.data(), width, height);
+    for (int sy = -maxShift; sy <= maxShift; ++sy) {
+        for (int sx = -maxShift; sx <= maxShift; ++sx) {
+            float currentSAD = 0.0f;
+            int count = 0;
+            for (int y = maxShift; y < dsH - maxShift; y += 3) {
+                for (int x = maxShift; x < dsW - maxShift; x += 3) {
+                    float diff = dsNear[y * dsW + x] - dsFar[(y + sy) * dsW + (x + sx)];
+                    currentSAD += std::abs(diff);
+                    count++;
+                }
+            }
+            if (count > 0 && (currentSAD / count) < minSAD) {
+                minSAD = currentSAD / count;
+                bestDx = sx * ds;
+                bestDy = sy * ds;
+            }
+        }
+    }
+    LOGD("Alignment offset found: dx=%d, dy=%d", bestDx, bestDy);
 
-    computeModifiedLaplacian(grayMain.data(), focusMain.data(), width, height, 2);
-    computeModifiedLaplacian(grayTele.data(), focusTele.data(), width, height, 2);
+    // Step 3: Compute Sharpness Maps for Near vs Far frames
+    std::vector<float> focusNear(width * height, 0.0f);
+    std::vector<float> focusFar(width * height, 0.0f);
+    std::vector<float> smoothNear(width * height, 0.0f);
+    std::vector<float> smoothFar(width * height, 0.0f);
 
-    smoothFocusMap(focusMain.data(), smoothMain.data(), width, height, 7);
-    smoothFocusMap(focusTele.data(), smoothTele.data(), width, height, 7);
+    computeModifiedLaplacian(grayNear.data(), focusNear.data(), width, height);
+    computeModifiedLaplacian(grayFar.data(), focusFar.data(), width, height);
 
-    // Step 3: Multi-Band Blending / Soft Focus Fusion
+    smoothFocusMap(focusNear.data(), smoothNear.data(), width, height, 9);
+    smoothFocusMap(focusFar.data(), smoothFar.data(), width, height, 9);
+
+    // Step 4: Multi-Band Soft Focus Fusion
     for (int y = 0; y < height; ++y) {
+        int alignedY = std::clamp(y + bestDy, 0, height - 1);
         for (int x = 0; x < width; ++x) {
             int idx = y * width + x;
-            uint32_t telePixel = warpedTele[idx];
+            int alignedX = std::clamp(x + bestDx, 0, width - 1);
+            int alignedIdx = alignedY * width + alignedX;
 
-            // If pixel is outside telephoto lens coverage, keep 1x main wide lens
-            if (telePixel == 0) {
-                outPixels[idx] = srcMain[idx];
-                continue;
-            }
+            float sNear = smoothNear[idx];
+            float sFar = smoothFar[alignedIdx];
 
-            float sMain = smoothMain[idx];
-            float sTele = smoothTele[idx];
+            // Focus sharpness differential
+            float diff = sFar - sNear;
 
-            // Weight calculation: Sigmoid transition based on focus sharpness differential
-            float diff = sTele - sMain;
-            float weightTele = 1.0f / (1.0f + std::exp(-diff * 0.15f));
+            // Sigmoid transition with soft slope
+            float weightFar = 1.0f / (1.0f + std::exp(-diff * 0.12f));
 
-            // Soft-blend boundary to prevent hard seam line
-            uint32_t pMain = srcMain[idx];
-            float rm = (pMain & 0xFF);
-            float gm = ((pMain >> 8) & 0xFF);
-            float bm = ((pMain >> 16) & 0xFF);
+            // Soft-blend colors
+            uint32_t pNear = srcNear[idx];
+            uint32_t pFar = srcFar[alignedIdx];
 
-            float rt = (telePixel & 0xFF);
-            float gt = ((telePixel >> 8) & 0xFF);
-            float bt = ((telePixel >> 16) & 0xFF);
+            float rN = (pNear & 0xFF);
+            float gN = ((pNear >> 8) & 0xFF);
+            float bN = ((pNear >> 16) & 0xFF);
 
-            uint32_t rOut = static_cast<uint32_t>(rm * (1.0f - weightTele) + rt * weightTele);
-            uint32_t gOut = static_cast<uint32_t>(gm * (1.0f - weightTele) + gt * weightTele);
-            uint32_t bOut = static_cast<uint32_t>(bm * (1.0f - weightTele) + bt * weightTele);
+            float rF = (pFar & 0xFF);
+            float gF = ((pFar >> 8) & 0xFF);
+            float bF = ((pFar >> 16) & 0xFF);
+
+            uint32_t rOut = static_cast<uint32_t>(rN * (1.0f - weightFar) + rF * weightFar);
+            uint32_t gOut = static_cast<uint32_t>(gN * (1.0f - weightFar) + gF * weightFar);
+            uint32_t bOut = static_cast<uint32_t>(bN * (1.0f - weightFar) + bF * weightFar);
 
             outPixels[idx] = (0xFF << 24) | (bOut << 16) | (gOut << 8) | rOut;
         }

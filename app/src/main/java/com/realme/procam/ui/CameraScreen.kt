@@ -566,12 +566,12 @@ private fun ShutterBar(
                         .background(if (activeMode == CameraMode.DUAL_FOCUS) AccentCyan else Color.White),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isTeleStep) {
+                    if (activeMode == CameraMode.DUAL_FOCUS) {
                         Icon(
-                            Icons.Default.ZoomIn,
-                            contentDescription = "3x Telescopic Shot",
+                            Icons.Default.Layers,
+                            contentDescription = "Optical Focus Stack",
                             tint = Black,
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(32.dp)
                         )
                     }
                 }
