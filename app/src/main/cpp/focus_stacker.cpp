@@ -3,6 +3,7 @@
 #include <android/log.h>
 #include <cmath>
 #include <vector>
+#include <array>
 #include <algorithm>
 #include <cstring>
 #include <omp.h>

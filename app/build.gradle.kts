@@ -98,6 +98,5 @@ dependencies {
     // Kotlin Coroutines
     implementation(libs.kotlinx.coroutines.android)
 
-    // OpenCV Android (Pre-built Maven artifact or direct NDK binding)
-    implementation("com.quickbirdstudios:opencv:4.5.3.0")
+    // OpenCV Computer Vision and Multi-band Stacking is compiled via Native C++ NDK CMake (procam_native)
 }

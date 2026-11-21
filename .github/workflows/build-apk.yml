@@ -3,9 +3,7 @@ name: Build Realme 14 Pro+ ProCam APK
 on:
   push:
     branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   build:
@@ -20,20 +18,17 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: gradle
 
-    - name: Set up Android SDK & NDK
-      uses: android-actions/setup-android@v3
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
 
-    - name: Install Android NDK & CMake
+    - name: Accept Licenses & Install NDK / CMake
       run: |
-        sdkmanager --install "ndk;25.1.8937393" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
-
-    - name: Grant Execute Permission for Gradlew
-      run: chmod +x gradlew
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.1.8937393" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
 
     - name: Build Debug APK
-      run: ./gradlew assembleDebug --stacktrace
+      run: gradle assembleDebug --stacktrace
 
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
