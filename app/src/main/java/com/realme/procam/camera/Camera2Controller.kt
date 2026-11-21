@@ -67,6 +67,9 @@ class Camera2Controller(
     private var physicalPeriscopeId: String? = null
     private var physicalUltraWideId: String? = null
 
+    private var activeAfRegion: MeteringRectangle? = null
+    private var activeAeRegion: MeteringRectangle? = null
+
     // Current State Flows
     private val _currentLens = MutableStateFlow(LensType.MAIN_WIDE)
     val currentLens: StateFlow<LensType> = _currentLens.asStateFlow()
@@ -282,10 +285,14 @@ class Camera2Controller(
                     set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, evSteps)
                 }
 
-                // 3. Focus Mode (Auto vs Manual Distance)
+                // 3. Focus Mode (Auto vs Manual Distance vs Tapped AF)
                 if (_isManualFocus.value) {
                     set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
                     set(CaptureRequest.LENS_FOCUS_DISTANCE, _focusDistance.value)
+                } else if (activeAfRegion != null) {
+                    set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
+                    set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(activeAfRegion))
+                    activeAeRegion?.let { set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(it)) }
                 } else {
                     set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
                 }
@@ -372,22 +379,37 @@ class Camera2Controller(
         val session = captureSession ?: return
 
         try {
+            _isManualFocus.value = false
             val chars = cameraManager.getCameraCharacteristics(logicalCameraId)
             val sensorRect = chars.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE) ?: Rect(0, 0, 4000, 3000)
 
-            val x = (normalizedX * sensorRect.width()).toInt().coerceIn(0, sensorRect.width())
-            val y = (normalizedY * sensorRect.height()).toInt().coerceIn(0, sensorRect.height())
-            val halfArea = 150
+            // Correct coordinate transform for 90-degree rotated portrait camera sensor
+            val sensorX = (normalizedY * sensorRect.width()).toInt().coerceIn(0, sensorRect.width())
+            val sensorY = ((1.0f - normalizedX) * sensorRect.height()).toInt().coerceIn(0, sensorRect.height())
+
+            val halfArea = 250
             val focusArea = MeteringRectangle(
                 Rect(
-                    (x - halfArea).coerceAtLeast(0),
-                    (y - halfArea).coerceAtLeast(0),
-                    (x + halfArea).coerceAtMost(sensorRect.width()),
-                    (y + halfArea).coerceAtMost(sensorRect.height())
+                    (sensorX - halfArea).coerceAtLeast(0),
+                    (sensorY - halfArea).coerceAtLeast(0),
+                    (sensorX + halfArea).coerceAtMost(sensorRect.width()),
+                    (sensorY + halfArea).coerceAtMost(sensorRect.height())
                 ),
                 1000
             )
 
+            activeAfRegion = focusArea
+            activeAeRegion = focusArea
+
+            // 1. Cancel previous AF
+            val cancelBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                previewSurface?.let { addTarget(it) }
+                analysisImageReader?.surface?.let { addTarget(it) }
+                set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL)
+            }
+            session.capture(cancelBuilder.build(), null, backgroundHandler)
+
+            // 2. Trigger fresh AF on the tapped spot
             val builder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                 previewSurface?.let { addTarget(it) }
                 analysisImageReader?.surface?.let { addTarget(it) }
@@ -400,6 +422,9 @@ class Camera2Controller(
                 set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START)
             }
             session.capture(builder.build(), null, backgroundHandler)
+
+            // 3. Keep repeating request locked on tapped region
+            updatePreviewRepeating()
         } catch (e: Exception) {
             Log.e(TAG, "Error in tap-to-focus", e)
         }

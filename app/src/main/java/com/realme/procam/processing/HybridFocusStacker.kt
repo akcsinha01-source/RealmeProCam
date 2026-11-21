@@ -16,6 +16,7 @@ import com.realme.procam.camera.RealmeCameraConstants
 import com.realme.procam.camera.RealmeCameraConstants.LensType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,9 +30,11 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Orchestrates the Hybrid Dual-Lens Focus Stacking workflow tailored for Realme 14 Pro+ 5G.
- * Coordinates 1x Main Wide foreground acquisition, physical switch to 3x Periscope Telephoto,
- * ghost overlay alignment, 3x distant background acquisition, and OpenCV/C++ Laplacian pyramid blending.
+ * Orchestrates Focus Stacking for Realme 14 Pro+ 5G.
+ * Supports two distinct modes based on photographic requirement:
+ * 1. FULL_FRAME_1X (Default): 1x Near Focus + 1x Far Infinity Focus on the full 50MP Sony IMX890 sensor.
+ *    Provides 100% full-frame wide angle coverage with razor-sharp focus from 10cm to infinity edge-to-edge!
+ * 2. HYBRID_1X_3X_TELE: 1x Foreground + 3x Periscope Telephoto center detail alignment.
  */
 class HybridFocusStacker(
     private val context: Context,
@@ -51,21 +54,29 @@ class HybridFocusStacker(
         }
     }
 
+    enum class StackingMethod(val label: String, val description: String) {
+        FULL_FRAME_1X("1x FULL FRAME", "1x Near + 1x Far (Edge-to-Edge 100% Sharp)"),
+        HYBRID_1X_3X("1x + 3x TELE", "1x Foreground + 3x Periscope Center Detail")
+    }
+
     enum class StackingPhase {
         IDLE,
         STEP1_NEAR_PROMPT,       // Step 1: Tap near subject on 1x
         STEP1_CAPTURING,
         STEP2_GUIDED_TRANSITION, // Step 2: Telephoto 3x active + ghost overlay visible
-        STEP3_FAR_PROMPT,        // Step 3: Tap distant subject on 3x periscope
+        STEP3_FAR_PROMPT,        // Step 3: Tap distant subject
         STEP3_CAPTURING,
         STEP4_BLENDING,          // Step 4: Homography alignment + Laplacian Pyramid fusion
         COMPLETED
     }
 
+    private val _stackingMethod = MutableStateFlow(StackingMethod.FULL_FRAME_1X)
+    val stackingMethod: StateFlow<StackingMethod> = _stackingMethod.asStateFlow()
+
     private val _phase = MutableStateFlow(StackingPhase.IDLE)
     val phase: StateFlow<StackingPhase> = _phase.asStateFlow()
 
-    private val _statusMessage = MutableStateFlow("हाइब्रिड फोकस स्टैक मोड तैयार")
+    private val _statusMessage = MutableStateFlow("फोकस स्टैक मोड तैयार")
     val statusMessage: StateFlow<String> = _statusMessage.asStateFlow()
 
     private val _ghostOverlayBitmap = MutableStateFlow<Bitmap?>(null)
@@ -83,26 +94,56 @@ class HybridFocusStacker(
         usePyramid: Boolean
     ): Boolean
 
-    /**
-     * Initializes Step 1: Binds 1x Main Wide Lens, locks AF near.
-     */
-    fun startDualLensSequence() {
-        _phase.value = StackingPhase.STEP1_NEAR_PROMPT
-        _statusMessage.value = "कदम 1: सामने वाले विषय पर टैप करें (Main 1x Active)"
-        cameraController.switchLens(LensType.MAIN_WIDE)
-        cameraController.setFocusDistance(RealmeCameraConstants.FOCUS_MACRO_NEAR) // Set near focus
+    fun toggleStackingMethod(method: StackingMethod) {
+        _stackingMethod.value = method
+        startDualLensSequence()
     }
 
     /**
-     * Triggers capture for Step 1 (Foreground near shot).
+     * Initializes Step 1: Binds 1x Main Wide Lens, enables active PDAF tap-to-focus.
      */
-    fun captureStep1Near() {
+    fun startDualLensSequence() {
+        _phase.value = StackingPhase.STEP1_NEAR_PROMPT
+        cameraController.switchLens(LensType.MAIN_WIDE)
+        cameraController.resetAutoFocus() // Use full active PDAF autofocus on tapped subject!
+        
+        if (_stackingMethod.value == StackingMethod.FULL_FRAME_1X) {
+            _statusMessage.value = "सामने वाले विषय पर टैप करें (1x Edge-to-Edge Stacking)"
+        } else {
+            _statusMessage.value = "सामने वाले विषय पर टैप करें (Main 1x Active)"
+        }
+    }
+
+    /**
+     * Triggers capture for Step 1.
+     */
+    fun captureStep1Near(onComplete: ((Uri?) -> Unit)? = null) {
         _phase.value = StackingPhase.STEP1_CAPTURING
         _statusMessage.value = "नज़दीकी फ्रेम कैप्चर हो रहा है..."
 
-        cameraController.captureStillBitmap { bitmap ->
-            nearForegroundBitmap = bitmap
-            prepareStep2TelephotoTransition(bitmap)
+        cameraController.captureStillBitmap { shot1 ->
+            nearForegroundBitmap = shot1
+
+            if (_stackingMethod.value == StackingMethod.FULL_FRAME_1X) {
+                // Method 1: Automatic 1x Full Frame Deep Focus Stacking
+                // Automatically shift focus to Infinity (0.0 diopters) on the SAME 1x sensor!
+                _phase.value = StackingPhase.STEP3_CAPTURING
+                _statusMessage.value = "दूर का बैकग्राउंड कैप्चर हो रहा है (1x Infinity Focus)..."
+                cameraController.setFocusDistance(RealmeCameraConstants.FOCUS_INFINITY)
+
+                coroutineScope.launch {
+                    delay(200) // Allow lens voice coil motor to settle at infinity
+                    cameraController.captureStillBitmap { shot2 ->
+                        farBackgroundBitmap = shot2
+                        _phase.value = StackingPhase.STEP4_BLENDING
+                        _statusMessage.value = "100% फुल-फ्रेम AI फोकस स्टैकिंग जारी है..."
+                        processAndStackFrames(1.0f, onComplete ?: {})
+                    }
+                }
+            } else {
+                // Method 2: Hybrid 1x Main + 3x Periscope Telephoto Transition
+                prepareStep2TelephotoTransition(shot1)
+            }
         }
     }
 
@@ -111,7 +152,6 @@ class HybridFocusStacker(
      * and prompts user in Hinglish to frame the background.
      */
     private fun prepareStep2TelephotoTransition(shot1Bmp: Bitmap) {
-        // Crop center of Shot 1 to match the 3.04x optical field of view of Periscope
         val scale = RealmeCameraConstants.ZOOM_3X
         val cropW = (shot1Bmp.width / scale).toInt()
         val cropH = (shot1Bmp.height / scale).toInt()
@@ -123,7 +163,7 @@ class HybridFocusStacker(
 
         // Physically switch to 3x Periscope Telephoto Lens
         cameraController.switchLens(LensType.PERISCOPE)
-        cameraController.setFocusDistance(RealmeCameraConstants.FOCUS_INFINITY) // Focus set for distant objects
+        cameraController.setFocusDistance(RealmeCameraConstants.FOCUS_INFINITY)
 
         _phase.value = StackingPhase.STEP2_GUIDED_TRANSITION
         _statusMessage.value = "Ab door wale subject par tap karke photo kheenchein (Telephoto Lens Active)"
@@ -141,15 +181,15 @@ class HybridFocusStacker(
             _phase.value = StackingPhase.STEP4_BLENDING
             _statusMessage.value = "AI Focus Stacking & Alignment जारी है... कृपया स्थिर रखें।"
 
-            // Run alignment and blending on background I/O thread
-            processAndStackFrames(onComplete)
+            // Run alignment and blending on background thread with 3.04x scale
+            processAndStackFrames(RealmeCameraConstants.ZOOM_3X, onComplete)
         }
     }
 
     /**
      * Step 4: Scale matching, Homography alignment & Laplacian Pyramid Focus Blending.
      */
-    private fun processAndStackFrames(onComplete: (Uri?) -> Unit) {
+    private fun processAndStackFrames(scaleRatio: Float, onComplete: (Uri?) -> Unit) {
         val near = nearForegroundBitmap ?: return
         val far = farBackgroundBitmap ?: return
 
@@ -158,21 +198,21 @@ class HybridFocusStacker(
             var success = false
 
             try {
-                // Call native C++ OpenMP accelerated Laplacian pyramid focus fusion
+                // Call native C++ OpenMP/pure C++ accelerated Laplacian pyramid focus fusion
                 success = nativeAlignAndStack(
                     bmpMainNear = near,
                     bmpTeleFar = far,
                     bmpOutput = resultBitmap,
-                    opticalScaleRatio = RealmeCameraConstants.ZOOM_3X,
+                    opticalScaleRatio = scaleRatio,
                     usePyramid = true
                 )
             } catch (e: Throwable) {
                 Log.e(TAG, "Native focus stacking failed, running high-performance Kotlin fallback", e)
             }
 
-            // Fallback blending if native fails or on test devices
+            // Fallback blending if native fails
             if (!success) {
-                performFallbackBlend(near, far, resultBitmap)
+                performFallbackBlend(near, far, resultBitmap, scaleRatio)
             }
 
             // Save to DCIM/ProCam
@@ -184,33 +224,40 @@ class HybridFocusStacker(
                 _ghostOverlayBitmap.value = null
                 nearForegroundBitmap = null
                 farBackgroundBitmap = null
+                // Reset camera back to continuous autofocus for next shot
+                cameraController.resetAutoFocus()
                 onComplete(savedUri)
             }
         }
     }
 
-    private fun performFallbackBlend(main: Bitmap, tele: Bitmap, output: Bitmap) {
+    private fun performFallbackBlend(main: Bitmap, tele: Bitmap, output: Bitmap, scaleRatio: Float) {
         val canvas = Canvas(output)
         canvas.drawBitmap(main, 0f, 0f, null)
 
         val paint = Paint().apply {
-            alpha = 180 // Blend semi-transparent
+            alpha = 180
         }
-        val destRect = Rect(
-            (main.width * 0.25f).toInt(),
-            (main.height * 0.25f).toInt(),
-            (main.width * 0.75f).toInt(),
-            (main.height * 0.75f).toInt()
-        )
-        canvas.drawBitmap(tele, null, destRect, paint)
+        if (scaleRatio > 1.5f) {
+            val destRect = Rect(
+                (main.width * 0.25f).toInt(),
+                (main.height * 0.25f).toInt(),
+                (main.width * 0.75f).toInt(),
+                (main.height * 0.75f).toInt()
+            )
+            canvas.drawBitmap(tele, null, destRect, paint)
+        } else {
+            canvas.drawBitmap(tele, 0f, 0f, paint)
+        }
     }
 
     fun reset() {
         _phase.value = StackingPhase.IDLE
-        _statusMessage.value = "हाइब्रिड फोकस स्टैक मोड तैयार"
+        _statusMessage.value = "फोकस स्टैक मोड तैयार"
         _ghostOverlayBitmap.value = null
         nearForegroundBitmap = null
         farBackgroundBitmap = null
+        cameraController.resetAutoFocus()
     }
 
     private fun saveImageToMediaStore(bitmap: Bitmap, prefix: String): Uri? {

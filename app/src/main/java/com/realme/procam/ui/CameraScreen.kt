@@ -63,6 +63,7 @@ fun CameraScreen(
     val stackerPhase by viewModel.focusStacker.phase.collectAsState()
     val stackerStatus by viewModel.focusStacker.statusMessage.collectAsState()
     val ghostOverlayBitmap by viewModel.focusStacker.ghostOverlayBitmap.collectAsState()
+    val stackingMethod by viewModel.focusStacker.stackingMethod.collectAsState()
 
     // Overlays & Cinematography
     val gridType by viewModel.gridType.collectAsState()
@@ -118,8 +119,8 @@ fun CameraScreen(
         // 3. Electronic Horizon Level (Real-time Gyro Roll)
         ElectronicHorizonOverlay(rollAngle = rollAngle, isLevel = isLevel)
 
-        // 4. Ghost Overlay (Onion Skin) during Dual-Lens Step 2 & 3
-        if (activeMode == CameraMode.DUAL_FOCUS) {
+        // 4. Ghost Overlay (Onion Skin) during Hybrid 1x+3x Step 2 & 3
+        if (activeMode == CameraMode.DUAL_FOCUS && stackingMethod == HybridFocusStacker.StackingMethod.HYBRID_1X_3X) {
             GhostOverlayView(ghostBitmap = ghostOverlayBitmap)
         }
 
@@ -241,6 +242,8 @@ fun CameraScreen(
             DualLensProgressIndicator(
                 phase = stackerPhase,
                 statusMessage = stackerStatus,
+                stackingMethod = stackingMethod,
+                onToggleMethod = { method -> viewModel.focusStacker.toggleStackingMethod(method) },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 110.dp)

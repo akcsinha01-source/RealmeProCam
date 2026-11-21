@@ -167,7 +167,10 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 when (focusStacker.phase.value) {
                     HybridFocusStacker.StackingPhase.IDLE,
                     HybridFocusStacker.StackingPhase.STEP1_NEAR_PROMPT -> {
-                        focusStacker.captureStep1Near()
+                        focusStacker.captureStep1Near { uri ->
+                            _lastCapturedUri.value = uri
+                            _capturedNotification.value = "100% फुल-फ्रेम डीप फोकस फोटो तैयार!"
+                        }
                     }
                     HybridFocusStacker.StackingPhase.STEP2_GUIDED_TRANSITION,
                     HybridFocusStacker.StackingPhase.STEP3_FAR_PROMPT -> {
