@@ -61,6 +61,7 @@ fun CameraScreen(
     // Observe State
     val activeMode by viewModel.activeMode.collectAsState()
     val currentLens by viewModel.cameraController.currentLens.collectAsState()
+    val zoomRatio by viewModel.zoomRatio.collectAsState()
     val iso by viewModel.cameraController.iso.collectAsState()
     val isManualExposure by viewModel.cameraController.isManualExposure.collectAsState()
     val shutterSpeedNs by viewModel.cameraController.shutterSpeedNs.collectAsState()
@@ -381,13 +382,10 @@ fun CameraScreen(
                 .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Physical Lens Quick-Switch Selector Pills
-            LensSelectorBar(
-                currentLens = currentLens,
-                onLensSelected = { lens ->
-                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                    viewModel.switchLens(lens)
-                }
+            // Tactical Rotary Zooming Wheel with up to 200x Telescopic Zoom
+            ZoomingWheel(
+                currentZoom = zoomRatio,
+                onZoomChange = viewModel::setZoomRatio
             )
 
             Spacer(modifier = Modifier.height(8.dp))

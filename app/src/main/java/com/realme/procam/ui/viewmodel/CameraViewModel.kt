@@ -148,8 +148,14 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    val zoomRatio: StateFlow<Float> = cameraController.zoomRatio
+
     fun switchLens(lens: LensType) {
         cameraController.switchLens(lens)
+    }
+
+    fun setZoomRatio(ratio: Float) {
+        cameraController.setZoomRatio(ratio)
     }
 
     fun setGridType(grid: GridType) {

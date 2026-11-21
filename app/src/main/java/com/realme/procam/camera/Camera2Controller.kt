@@ -71,6 +71,9 @@ class Camera2Controller(
     private var activeAeRegion: MeteringRectangle? = null
 
     // Current State Flows
+    private val _zoomRatio = MutableStateFlow(1.0f)
+    val zoomRatio: StateFlow<Float> = _zoomRatio.asStateFlow()
+
     private val _currentLens = MutableStateFlow(LensType.MAIN_WIDE)
     val currentLens: StateFlow<LensType> = _currentLens.asStateFlow()
 
@@ -331,7 +334,7 @@ class Camera2Controller(
                 addTarget(aSurface)
 
                 // 1. Zoom Ratio & Scaler Crop Region (Physical Lens Binding)
-                applyZoom(this, _currentLens.value.zoomRatio)
+                applyZoom(this, _zoomRatio.value)
 
                 // 2. Exposure Mode (Auto vs Manual ISO & Shutter)
                 if (_isManualExposure.value) {
@@ -369,14 +372,22 @@ class Camera2Controller(
     }
 
     private fun applyZoom(builder: CaptureRequest.Builder, zoomRatio: Float) {
+        val safeZoom = zoomRatio.coerceIn(0.6f, 200.0f)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            builder.set(CaptureRequest.CONTROL_ZOOM_RATIO, zoomRatio)
+            try {
+                val chars = cameraManager.getCameraCharacteristics(logicalCameraId)
+                val range = chars.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)
+                if (range != null) {
+                    val hardwareClamped = safeZoom.coerceIn(range.lower, range.upper)
+                    builder.set(CaptureRequest.CONTROL_ZOOM_RATIO, hardwareClamped)
+                }
+            } catch (_: Exception) {}
         }
         try {
             val chars = cameraManager.getCameraCharacteristics(logicalCameraId)
             val activeArray = chars.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE) ?: Rect(0, 0, 4000, 3000)
-            val cropW = (activeArray.width() / zoomRatio).toInt()
-            val cropH = (activeArray.height() / zoomRatio).toInt()
+            val cropW = (activeArray.width() / safeZoom).toInt().coerceAtLeast(16)
+            val cropH = (activeArray.height() / safeZoom).toInt().coerceAtLeast(12)
             val cropX = (activeArray.width() - cropW) / 2
             val cropY = (activeArray.height() - cropH) / 2
             builder.set(CaptureRequest.SCALER_CROP_REGION, Rect(cropX, cropY, cropX + cropW, cropY + cropH))
@@ -397,11 +408,27 @@ class Camera2Controller(
     }
 
     /**
+     * Continuous Zoom Ratio setting (from 0.6x Ultra-Wide to 200x Periscope Ultra-Zoom).
+     * Automatically binds the physical Periscope Telephoto sensor when zoom >= 3.0x.
+     */
+    fun setZoomRatio(ratio: Float) {
+        val clamped = ratio.coerceIn(0.6f, 200.0f)
+        _zoomRatio.value = clamped
+
+        _currentLens.value = when {
+            clamped < 0.95f -> LensType.ULTRA_WIDE
+            clamped < 2.95f -> LensType.MAIN_WIDE
+            clamped < 5.95f -> LensType.PERISCOPE
+            else -> LensType.IN_SENSOR
+        }
+        updatePreviewRepeating()
+    }
+
+    /**
      * Physical Lens Switching: 0.6x Ultra-Wide, 1x Main Wide, 3x Periscope Telephoto, 6x Lossless
      */
     fun switchLens(lens: LensType) {
-        _currentLens.value = lens
-        updatePreviewRepeating()
+        setZoomRatio(lens.zoomRatio)
     }
 
     fun setIso(value: Int) {
@@ -489,9 +516,7 @@ class Camera2Controller(
             val builder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                 previewSurface?.let { addTarget(it) }
                 analysisImageReader?.surface?.let { addTarget(it) }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    set(CaptureRequest.CONTROL_ZOOM_RATIO, _currentLens.value.zoomRatio)
-                }
+                applyZoom(this, _zoomRatio.value)
                 set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(focusArea))
                 set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(focusArea))
                 set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
@@ -574,7 +599,7 @@ class Camera2Controller(
         try {
             val captureBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
                 addTarget(jReader.surface)
-                applyZoom(this, _currentLens.value.zoomRatio)
+                applyZoom(this, _zoomRatio.value)
                 set(CaptureRequest.JPEG_QUALITY, 100.toByte())
                 set(CaptureRequest.JPEG_ORIENTATION, 90) // Portrait standard
             }
